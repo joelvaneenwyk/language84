@@ -1,0 +1,75 @@
+{
+: read
+: show
+: compare
+: min
+: max
+: pow
+: gcd
+: abs
+: fold
+}
+
+Where
+
+Define (pow b n)
+    Iterate {a b n} From {1 b n}
+        Let a If [[n % 2] = 1] [a * b] a
+        Let n [n / 2]
+        In
+        If [n = 0]
+            a
+            (Continue a [b * b] n)
+
+Define (gcd b a)
+    Iterate {b a}
+        If [a = 0]
+            (abs b)
+            (Continue a [b % a])
+
+Define (fold n z succ)
+    Iterate {i r} From {0 z}
+        If [i = n]
+            r
+            (Continue [i + 1] (succ i r))
+
+Where
+
+Define (read text)
+    Let n (STRING.length text)
+    In
+    Iterate {i num} From {0 0}
+        Cond {
+        | [i = n] 'just.num
+        | True
+            Let c (STRING.fetch text i)
+            In
+            If (And [c >= `0`] [c <= `9`])
+                (Continue [i + 1] [[10 * num] + [c - `0`]])
+                'nothing
+        }
+
+Define (show i)
+    (Prim show_integer i)
+
+Where
+
+Define (compare a b)
+    Cond {
+    | [a < b] 'less
+    | [a > b] 'greater
+    | True 'equal
+    }
+
+Define (min a b)
+    If [a < b] a b
+
+Define (max a b)
+    If [a > b] a b
+
+Define (abs n)
+    If [n < 0] -n n
+
+Where
+
+Let STRING Package "string"

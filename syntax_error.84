@@ -1,0 +1,82 @@
+{
+: show
+}
+
+Where
+
+Define (show file_name text message i)
+    Let {line start} (locate_token text i)
+    Let end i
+    In
+    Begin {
+        (STDIO.print_line
+            (STRING.concat
+                [file_name & ":" & (Z.show line) & ": " & message & 'nil]))
+        When [start < (STRING.length text)] {
+            (show_token text start end)
+        }
+    }
+
+Where
+
+Define (locate_token text j)
+    Let {k line}
+        Iterate {i line k} From {0 1 0}
+            If [i = j]
+                {k line}
+                If [(STRING.fetch text i) = `\n`]
+                    (Continue [i + 1] [line + 1] i)
+                    (Continue [i + 1] line k)
+    In
+    Iterate i From k
+        Let start (SCAN.whitespace text i)
+        In
+        Let {i _} (SCAN.token text start)
+        In
+        If [i = j]
+            {line start}
+            (Continue i)
+
+Define (show_token text start end)
+    Let n (STRING.length text)
+    In
+    Iterate {j line line_start} From {0 0 0}
+        Begin Cond {
+        | [j = n]
+            (OS.die "Unexpected EOF.")
+        | [j = start]
+            Let line_end
+                Iterate i From j
+                    Cond {
+                    | [i = n]
+                        (OS.die "Unexpected EOF.")
+                    | [(STRING.fetch text i) = `\n`]
+                        i
+                    | True
+                        (Continue [i + 1])
+                    }
+            (STDIO.print_line (STRING.clip text line_start line_end))
+            Iterate i From line_start
+                When [i != start] {
+                    (STDIO.print " ")
+                    (Continue [i + 1])
+                }
+            Iterate i From start
+                When [i != end] {
+                    (STDIO.print "^")
+                    (Continue [i + 1])
+                }
+            (STDIO.print_line "")
+        | [(STRING.fetch text j) = `\n`]
+            (Continue [j + 1] [line + 1] [j + 1])
+        | True
+            (Continue [j + 1] line line_start)
+        }
+
+Where
+
+Let OS Package "os"
+Let SCAN Package "scan"
+Let STDIO Package "stdio"
+Let STRING Package "string"
+Let Z Package "z"

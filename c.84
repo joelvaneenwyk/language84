@@ -1,0 +1,449 @@
+{
+: emit
+}
+
+Where
+
+Define (emit w program)
+    Define (write s)
+        (IO.write_all w s)
+    In
+    Let emit (make_emit write)
+    In
+    Begin {
+        (write "#include <support.h>\n")
+        (write "const U2 record_layouts[]={")
+        (LIST.for_each program.record_indexes
+            Func index Begin {
+                (LIST.for_each index
+                    Func label Begin {
+                        (write (Z.show label))
+                        (write ",")
+                    })
+                (write "Z,")
+            })
+        (write "};\n")
+        Begin Match program.constants {
+        | 'nil
+        | 'cons._
+            (write "static X ")
+            (LIST.reduce (LIST.iota (LIST.length program.constants)) ""
+                Func {prefix i} Begin {
+                    (write prefix)
+                    (write "c")
+                    (write (Z.show i))
+                    (Return ",")
+                })
+            (write ";\n")
+        }
+        (write "static X ")
+        (LIST.reduce (LIST.iota (LIST.length program.packages)) ""
+            Func {prefix i} Begin {
+                (write prefix)
+                (write "p")
+                (write (Z.show i))
+                (Return ",")
+            })
+        (write ";\n")
+        (LIST.for_each program.packages
+            Func package (LIST.for_each (LIST.reverse package.functions) emit))
+        (write "int main(int argc,const char*argv[]){\n")
+        (write "static _Alignas(16) char heap_bytes[256*1024*1024];")
+        (write "s36(sizeof(heap_bytes),heap_bytes,1024*1024,sizeof(record_layouts)/sizeof(record_layouts[0]),record_layouts,argc,argv);\n")
+        (LIST.for_each_numbered program.constants
+            Func {i s} Begin {
+                (emit 'c.i)
+                (write "=({const char s[]=")
+                (write s)
+                (write ";s86(sizeof(s)-1,s);});")
+            })
+        (LIST.for_each_numbered program.packages
+            Func {i package} Begin {
+                (write "\n")
+                (emit 'p.i)
+                (write "=")
+                (emit package.init)
+                (write ";")
+            })
+        (write "\nreturn 0;}\n")
+    }
+
+Where
+
+Define (make_emit write)
+    Let compile
+        Define (write s) 'write.s
+        Define (sequence terms) 'sequence.terms
+        Define (compile term) 'compile.term
+        In
+        Let write_comma (write ",")
+        In
+        Define (comma_sep terms)
+            (sequence (LIST.join write_comma terms))
+        Define (comma_pre terms)
+            (sequence
+                (LIST.fold terms 'nil
+                    Func {term terms} [write_comma & term & terms]))
+        In
+        Func term
+            Match term {
+            | 'stmt.stmt
+                Match stmt {
+                | 'expr.expr
+                    (sequence
+                        (Reduce &
+                            (write "({X t=s52(),x=")
+                            (compile 'expr.expr)
+                            (write ";s15(t);x;});")
+                            'nil))
+                | 'assign.{var expr}
+                    (sequence
+                        (Reduce &
+                            (compile 'expr.var)
+                            (write "=")
+                            (compile 'expr.expr)
+                            (write ";")
+                            'nil))
+                | 'env_access.{closure_var pairs}
+                    Define (compile_pair {xm j})
+                        (sequence
+                            (Reduce &
+                                (compile 'expr.xm)
+                                (write "=env[")
+                                (write (Z.show j))
+                                (write "]")
+                                'nil))
+                    In
+                    (sequence
+                        (Reduce &
+                            (write "const X*env=s62(")
+                            (compile 'expr.closure_var)
+                            (write ")")
+                            (comma_pre (LIST.map pairs compile_pair))
+                            (write ";")
+                            'nil))
+                | 'decls.pairs
+                    Define (compile_pair {var maybe_init})
+                        (sequence
+                            (Reduce &
+                                (compile 'expr.var)
+                                Match maybe_init {
+                                | 'nothing 'nil
+                                | 'just.expr
+                                    (Reduce &
+                                        (sequence
+                                            (Reduce &
+                                                (write "=")
+                                                (compile 'expr.expr)
+                                                'nil))
+                                        'nil)
+                                }))
+                    In
+                    Match pairs {
+                    | 'cons._
+                        (sequence
+                            (Reduce &
+                                (write "X ")
+                                (comma_sep (LIST.map pairs compile_pair))
+                                (write ";")
+                                'nil))
+                    }
+                }
+            | 'expr.expr
+                Match expr {
+                | 'true (write "15")
+                | 'false (write "271")
+                | 'num.i (write (Z.show i))
+                | 'empty_tuple (write "31")
+                | 'labeled_empty_tuple.label
+                    (write (Z.show (encode_empty_variant label)))
+                | 'alloc_labeled_value.{label expr}
+                    (sequence
+                        (Reduce &
+                            (write "s27(")
+                            (write (Z.show label))
+                            (write ",")
+                            (compile 'expr.expr)
+                            (write ")")
+                            'nil))
+                | 'remove_label.expr
+                    (sequence
+                        (Reduce &
+                            (write "s06(")
+                            (compile 'expr.expr)
+                            (write ")")
+                            'nil))
+                | 'alloc_tuple.exprs
+                    Match exprs {
+                    | 'nil (compile 'expr.'empty_tuple)
+                    | 'cons._
+                        (sequence
+                            (Reduce &
+                                (write "s78(")
+                                (write (Z.show (LIST.length exprs)))
+                                (write ",(X[]){")
+                                (comma_sep
+                                    (LIST.map exprs
+                                        Func expr (compile 'expr.expr)))
+                                (write "})")
+                                'nil))
+                    }
+                | 'alloc_record.{layout exprs}
+                    Match exprs {
+                    | 'cons._
+                        (sequence
+                            (Reduce &
+                                (write "s30(")
+                                (write (Z.show (LIST.length exprs)))
+                                (write ",(X[]){")
+                                (comma_sep
+                                    (LIST.map exprs
+                                        Func expr (compile 'expr.expr)))
+                                (write "},")
+                                (write (Z.show layout))
+                                (write ")")
+                                'nil))
+                    }
+                | 'tuple_fetch.{code i}
+                    (sequence
+                        (Reduce &
+                            (write "s68(")
+                            (compile 'expr.code)
+                            (write ",")
+                            (write (Z.show i))
+                            (write ")")
+                            'nil))
+                | 'record_fetch.{code i}
+                    (sequence
+                        (Reduce &
+                            (write "s31(")
+                            (compile 'expr.code)
+                            (write ",")
+                            (write (Z.show i))
+                            (write ")")
+                            'nil))
+                | 'iterate.{inits expr}
+                    (sequence
+                        (Reduce &
+                            (write "({__label__ l;")
+                            Match inits {
+                            | 'nil (write "U4 t=s52();")
+                            | 'cons._ (compile 'stmt.'decls.inits)
+                            }
+                            (write "l:")
+                            (compile 'expr.expr)
+                            (write ";})")
+                            'nil))
+                | 'continue.stmts
+                    (sequence
+                        (Reduce &
+                            (write "({")
+                            Match stmts {
+                            | 'nil (write "s15(t);")
+                            | 'cons._
+                                (sequence
+                                    (LIST.map stmts
+                                        Func stmt (compile 'stmt.stmt)))
+                            }
+                            (write "goto l;31;})")
+                            'nil))
+                | 'stmt_expr.{stmts expr}
+                    (sequence
+                        (Reduce &
+                            (write "({")
+                            (sequence
+                                (LIST.map stmts
+                                    Func stmt (compile 'stmt.stmt)))
+                            (compile 'expr.expr)
+                            (write ";})")
+                            'nil))
+                | 'func.{i args stmts expr}
+                    Define (compile_arg arg)
+                        (sequence
+                            [(write "X ") & (compile 'expr.arg) & 'nil])
+                    In
+                    (sequence
+                        (Reduce &
+                            (write "static X f")
+                            (write (Z.show i))
+                            (write "(")
+                            (comma_sep (LIST.map args compile_arg))
+                            (write "){return ")
+                            Block
+                                Let expr
+                                    Match stmts {
+                                    | 'nil expr
+                                    | 'cons._ 'stmt_expr.{stmts expr}
+                                    }
+                                In
+                                (compile 'expr.expr)
+                            (write ";}\n")
+                            'nil))
+                | 'prim_app.{name args}
+                    (sequence
+                        (Reduce &
+                            (write (RUNTIME.prim_short_name name))
+                            (write "(")
+                            (comma_sep
+                                (LIST.map args
+                                    Func expr (compile 'expr.expr)))
+                            (write ")")
+                            'nil))
+                | 'closure_app_known.{i func args}
+                    (sequence
+                        (Reduce &
+                            (write "f")
+                            (write (Z.show i))
+                            (write "(")
+                            (comma_sep
+                                (LIST.map [func & args]
+                                    Func expr (compile 'expr.expr)))
+                            (write ")")
+                            'nil))
+                | 'closure_app.{func args}
+                    (sequence
+                        (Reduce &
+                            (write "({X c=")
+                            (compile 'expr.func)
+                            (write ";((X(*)(X")
+                            (sequence
+                                (LIST.map args
+                                    Func _ (write ",X")))
+                            (write "))s35(c,")
+                            (write (Z.show (LIST.length args)))
+                            (write "))(c")
+                            (comma_pre
+                                (LIST.map args
+                                    Func arg (compile 'expr.arg)))
+                            (write ");})")
+                            'nil))
+                | 'alloc_closure.{i free num_params}
+                    (sequence
+                        (Reduce &
+                            (write "s75(f")
+                            (write (Z.show i))
+                            (write ",")
+                            (write (Z.show num_params))
+                            (write ",")
+                            (write (Z.show (LIST.length free)))
+                            Match free {
+                            | 'nil (write ",0")
+                            | 'cons._
+                                (sequence
+                                    (Reduce &
+                                        (write ",(X[]){")
+                                        (comma_sep
+                                            (LIST.map free
+                                                Func expr (compile 'expr.expr)))
+                                        (write "}")
+                                        'nil))
+                            }
+                            (write ")")
+                            'nil))
+                | 'labeled.{label expr}
+                    (sequence
+                        (Reduce &
+                            (write "({__label__ ")
+                            (compile 'expr.label)
+                            (write ";")
+                            (compile 'expr.label)
+                            (write ":")
+                            (compile 'expr.expr)
+                            (write ";})")
+                            'nil))
+                | 'stuck_cond (write "s89()")
+                | 'halt (write "s87()")
+                | 'match.{expr_var pat_var expr clauses}
+                    Define (compile_clause clause)
+                        Match clause {
+                        | 'default.body
+                            (sequence
+                                (Reduce &
+                                    (write "default:")
+                                    Match body {
+                                    | 'expr.expr
+                                        (sequence
+                                            (Reduce &
+                                                (write "r=")
+                                                (compile 'expr.expr)
+                                                (write ";break;")
+                                                'nil))
+                                    | 'stuck (write "s53();")
+                                    }
+                                    'nil))
+                        | 'labeled.{label expr}
+                            (sequence
+                                (Reduce &
+                                    (write "case ")
+                                    (write (Z.show label))
+                                    (write ":r=")
+                                    (compile 'expr.expr)
+                                    (write ";break;")
+                                    'nil))
+                        }
+                    In
+                    (sequence
+                        (Reduce &
+                            (write "({X r,")
+                            (compile 'expr.expr_var)
+                            (write "=")
+                            (compile 'expr.expr)
+                            (write ",")
+                            (compile 'expr.pat_var)
+                            (write "=")
+                            (compile 'expr.'remove_label.expr_var)
+                            (write ";switch(s09(")
+                            (compile 'expr.expr_var)
+                            (write ")){")
+                            (sequence (LIST.map clauses compile_clause))
+                            (write "}r;})")
+                            'nil))
+                | 'if.{test then else}
+                    (sequence
+                        (Reduce &
+                            (write "(")
+                            (compile 'expr.test)
+                            (write "==15?")
+                            (compile 'expr.then)
+                            (write ":")
+                            (compile 'expr.else)
+                            (write ")")
+                            'nil))
+                | 'x.i (sequence [(write "x") & (write (Z.show i)) & 'nil])
+                | 'c.i (sequence [(write "c") & (write (Z.show i)) & 'nil])
+                | 'p.i (sequence [(write "p") & (write (Z.show i)) & 'nil])
+                }
+            }
+    In
+    Func expr
+        Unfold term From (compile 'expr.expr)
+            Begin Match term {
+            | 'write.s (write s)
+            | 'sequence.terms
+                Iterate terms
+                    Begin Match terms {
+                    | 'nil
+                    | 'cons.{term terms}
+                        (Fold term)
+                        (Continue terms)
+                    }
+            | 'compile.term
+                (Fold (compile term))
+            }
+
+Where
+
+Define (encode_empty_variant label)
+    [[label * 256] + 47]
+
+Where
+
+Let IO Package "io"
+Let LIST Package "list"
+Let OS Package "os"
+Let QUEUE Package "queue"
+Let RUNTIME Package "runtime"
+Let SEARCH Package "search"
+Let STDIO Package "stdio"
+Let STRING Package "string"
+Let Z Package "z"

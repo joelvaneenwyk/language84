@@ -1,0 +1,181 @@
+{
+: encode_small_integer
+: prim_arity
+: prim_short_name
+}
+
+Where
+
+Define (encode_small_integer n)
+    [2 * n]
+
+Define (prim_arity name)
+    Match (MAP.search prim_arities name) {
+    | 'just.{_ arity} arity
+    | 'nothing
+        (die (STRING.concat ["No such primitive \"" & name & "\"." & 'nil]))
+    }
+
+Define (prim_short_name name)
+    Match (MAP.search prim_short_names name) {
+    | 'just.{_ short_name} short_name
+    | 'nothing
+        (die (STRING.concat ["No such primitive \"" & name & "\"." & 'nil]))
+    }
+
+Where
+
+Let prim_arities
+    Define (construct_map arity_list)
+        (LIST.reduce arity_list MAP.empty MAP.insert)
+    In
+    (construct_map
+        (Reduce &
+            {"exec" 4}
+            {"exit" 1}
+            {"getcwd" 0}
+            {"open" 3}
+            {"close" 1}
+            {"read" 4}
+            {"write" 4}
+            {"die" 1}
+            {"command_argc" 0}
+            {"command_argv" 1}
+            {"file_create" 1}
+            {"file_open" 1}
+            {"file_close" 1}
+            {"file_read_all" 1}
+            {"string_length" 1}
+            {"string_fetch" 2}
+            {"string_equal" 2}
+            {"string_compare" 2}
+            {"string_append" 2}
+            {"string_clip" 3}
+            {"mmap" 6}
+            {"munmap" 1}
+            {"epoll_create1" 1}
+            {"epoll_ctl" 4}
+            {"epoll_wait" 4}
+            {"chunk_global" 1}
+            {"chunk_new" 1}
+            {"chunk_size" 1}
+            {"chunk_store_bytes" 5}
+            {"chunk_fetch_bytes_ro" 3}
+            {"chunk_fetch_bytes_rw" 3}
+            {"chunk_store_uint8" 3}
+            {"chunk_fetch_uint8" 2}
+            {"chunk_store_int8" 3}
+            {"chunk_fetch_int8" 2}
+            {"chunk_store_uint16_le" 3}
+            {"chunk_fetch_uint16_le" 2}
+            {"chunk_store_int16_le" 3}
+            {"chunk_fetch_int16_le" 2}
+            {"chunk_store_uint32_le" 3}
+            {"chunk_fetch_uint32_le" 2}
+            {"chunk_store_int32_le" 3}
+            {"chunk_fetch_int32_le" 2}
+            {"chunk_store_uint64_le" 3}
+            {"chunk_fetch_uint64_le" 2}
+            {"chunk_store_int64_le" 3}
+            {"chunk_fetch_int64_le" 2}
+            {"negate" 1}
+            {"quotient" 2}
+            {"remainder" 2}
+            {"multiply" 2}
+            {"add" 2}
+            {"subtract" 2}
+            {"less" 2}
+            {"less_or_equal" 2}
+            {"greater" 2}
+            {"greater_or_equal" 2}
+            {"equal" 2}
+            {"print" 1}
+            {"print_line" 1}
+            {"show_integer" 1}
+            {"compose" 2}
+            'nil))
+
+Let prim_short_names
+    Define (construct_map list)
+        (LIST.reduce list MAP.empty MAP.insert)
+    In
+    (construct_map
+        (Reduce &
+            {"exec" "s00"}
+            {"exit" "s05"}
+            {"getcwd" "s85"}
+            {"open" "s03"}
+            {"close" "s72"}
+            {"read" "s67"}
+            {"write" "s41"}
+            {"die" "s26"}
+            {"command_argc" "s40"}
+            {"command_argv" "s24"}
+            {"print" "s18"}
+            {"print_line" "s79"}
+            {"file_create" "s20"}
+            {"file_open" "s23"}
+            {"file_close" "s92"}
+            {"file_read_all" "s28"}
+            {"show_integer" "s12"}
+            {"compose" "s22"}
+            {"multiply" "s93"}
+            {"add" "s19"}
+            {"subtract" "s47"}
+            {"negate" "s84"}
+            {"quotient" "s91"}
+            {"remainder" "s43"}
+            {"equal" "s50"}
+            {"less" "s10"}
+            {"less_or_equal" "s63"}
+            {"greater" "s61"}
+            {"greater_or_equal" "s55"}
+            {"string_length" "s65"}
+            {"string_fetch" "s69"}
+            {"string_compare" "s37"}
+            {"string_equal" "s45"}
+            {"string_append" "s25"}
+            {"string_clip" "s44"}
+            {"mmap" "s95"}
+            {"munmap" "s56"}
+            {"epoll_create1" "s71"}
+            {"epoll_ctl" "s60"}
+            {"epoll_wait" "s97"}
+            {"chunk_global" "s04"}
+            {"chunk_new" "s38"}
+            {"chunk_size" "s14"}
+            {"chunk_store_bytes" "s82"}
+            {"chunk_fetch_bytes_ro" "s11"}
+            {"chunk_fetch_bytes_rw" "s39"}
+            {"chunk_store_uint8" "s42"}
+            {"chunk_fetch_uint8" "s13"}
+            {"chunk_store_int8" "s76"}
+            {"chunk_fetch_int8" "s46"}
+            {"chunk_store_uint16_le" "s54"}
+            {"chunk_fetch_uint16_le" "s29"}
+            {"chunk_store_int16_le" "s08"}
+            {"chunk_fetch_int16_le" "s98"}
+            {"chunk_store_uint32_le" "s74"}
+            {"chunk_fetch_uint32_le" "s01"}
+            {"chunk_store_int32_le" "s17"}
+            {"chunk_fetch_int32_le" "s59"}
+            {"chunk_store_uint64_le" "s21"}
+            {"chunk_fetch_uint64_le" "s99"}
+            {"chunk_store_int64_le" "s58"}
+            {"chunk_fetch_int64_le" "s80"}
+            'nil))
+
+Where
+
+Let MAP
+    (SEARCH.MAP STRING.compare
+        Func {key _} key)
+
+Let die OS.die
+
+Where
+
+Let LIST Package "list"
+Let OS Package "os"
+Let SEARCH Package "search"
+Let STRING Package "string"

@@ -1,0 +1,26 @@
+{
+: write
+: write_all
+: write_byte
+: flush
+}
+
+Where
+
+Define (write_all w chunk)
+    (write w chunk 0 (CHUNK.size chunk))
+
+Where
+
+Define (write w chunk start size)
+    (w.interface.write w chunk start size)
+
+Define (write_byte w byte)
+    (w.interface.write_byte w byte)
+
+Define (flush w)
+    (w.interface.flush w)
+
+Where
+
+Let CHUNK Package "chunk"

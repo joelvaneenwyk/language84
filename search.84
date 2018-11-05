@@ -1,0 +1,238 @@
+{
+: MAP
+: SET
+}
+
+Where
+
+Define (MAP compare item_key)
+    (make compare item_key)
+
+Let SET
+    Define (item_key item) item
+    In
+    Func compare
+        Let MAP (make compare item_key)
+        In
+        Define (union s t)
+            (LIST.reduce (MAP.list s) t MAP.insert)
+        Define (diff s t)
+            (LIST.reduce (MAP.list s) MAP.empty
+                Func {u item}
+                    Match (MAP.search t item) {
+                    | 'nothing (MAP.insert u item)
+                    | 'just._ u
+                    })
+        In
+        {
+        : compare
+        : empty MAP.empty
+        : new MAP.new
+        : search MAP.search
+        : insert MAP.insert
+        : list MAP.list
+        : union
+        : diff
+        }
+
+Where
+
+Define (make compare item_key)
+    Define (search tree key)
+        Iterate {depth t} From {tree.depth tree.root}
+            Cond {
+            | [depth = 0] 'nothing
+            | [depth = 1]
+                Match t {
+                | 'one.a
+                    Match (compare key (item_key a)) {
+                    | 'equal 'just.a
+                    | _ 'nothing
+                    }
+                | 'two.{a b}
+                    Match (compare key (item_key a)) {
+                    | 'equal 'just.a
+                    | _
+                        Match (compare key (item_key b)) {
+                        | 'equal 'just.b
+                        | _ 'nothing
+                        }
+                    }
+                }
+            | True
+                Match t {
+                | 'one.{u a v}
+                    Match (compare key (item_key a)) {
+                    | 'less (Continue [depth - 1] u)
+                    | 'equal 'just.a
+                    | 'greater (Continue [depth - 1] v)
+                    }
+                | 'two.{u a v b w}
+                    Match (compare key (item_key a)) {
+                    | 'less (Continue [depth - 1] u)
+                    | 'equal 'just.a
+                    | 'greater
+                        Match (compare key (item_key b)) {
+                        | 'less (Continue [depth - 1] v)
+                        | 'equal 'just.b
+                        | 'greater (Continue [depth - 1] w)
+                        }
+                    }
+                }
+            }
+    In
+    Let empty
+        {
+        : depth 0
+        : size 0
+        : root 'zero
+        }
+    Define (insert tree a)
+        Define (insert depth tree a)
+            Unfold {depth tree a}
+                Cond {
+                | [depth = 1]
+                    Match tree {
+                    | 'one.b
+                        Match (compare (item_key a) (item_key b)) {
+                        | 'less 'no_split.'two.{a b}
+                        | 'greater 'no_split.'two.{b a}
+                        | 'equal 'no_split.'one.a
+                        }
+                    | 'two.{b c}
+                        Let key_a (item_key a)
+                        Let key_b (item_key b)
+                        Let key_c (item_key c)
+                        In
+                        Match (compare key_a key_b) {
+                        | 'less 'split.{'one.a b 'one.c}
+                        | 'greater
+                            Match (compare key_a key_c) {
+                            | 'less 'split.{'one.b a 'one.c}
+                            | 'greater 'split.{'one.b c 'one.a}
+                            | 'equal 'no_split.'two.{b a}
+                            }
+                        | 'equal 'no_split.'two.{a c}
+                        }
+                    }
+                | True
+                    Match tree {
+                    | 'one.{u b v}
+                        Match (compare (item_key a) (item_key b)) {
+                        | 'less
+                            Match (Fold [depth - 1] u a) {
+                            | 'no_split.u
+                                'no_split.'one.{u b v}
+                            | 'split.{t a u}
+                                'no_split.'two.{t a u b v}
+                            }
+                        | 'greater
+                            Match (Fold [depth - 1] v a) {
+                            | 'no_split.v
+                                'no_split.'one.{u b v}
+                            | 'split.{v c w}
+                                'no_split.'two.{u b v c w}
+                            }
+                        | 'equal 'no_split.'one.{u a v}
+                        }
+                    | 'two.{t b u c v}
+                        Let key_a (item_key a)
+                        Let key_b (item_key b)
+                        Let key_c (item_key c)
+                        In
+                        Match (compare key_a key_b) {
+                        | 'less
+                            Match (Fold [depth - 1] t a) {
+                            | 'no_split.t
+                                'no_split.'two.{t b u c v}
+                            | 'split.{tt a tu}
+                                'split.{'one.{tt a tu} b 'one.{u c v}}
+                            }
+                        | 'greater
+                            Match (compare key_a key_c) {
+                            | 'less
+                                Match (Fold [depth - 1] u a) {
+                                | 'no_split.u
+                                    'no_split.'two.{t b u c v}
+                                | 'split.{ut a uv}
+                                    'split.{'one.{t b ut} a 'one.{uv c v}}
+                                }
+                            | 'greater
+                                Match (Fold [depth - 1] v a) {
+                                | 'no_split.v
+                                    'no_split.'two.{t b u c v}
+                                | 'split.{vu a vv}
+                                    'split.{'one.{t b u} c 'one.{vu a vv}}
+                                }
+                            | 'equal 'no_split.'two.{t b u a v}
+                            }
+                        | 'equal 'no_split.'two.{t a u c v}
+                        }
+                    }
+                }
+        In
+        If [tree.depth = 0]
+            {
+            : depth 1
+            : size 1
+            : root 'one.a
+            }
+            Match (insert tree.depth tree.root a) {
+            | 'no_split.t
+                {
+                : depth tree.depth
+                : size [tree.size + 1]
+                : root t
+                }
+            | 'split.{u a v}
+                {
+                : depth [tree.depth + 1]
+                : size [tree.size + 1]
+                : root 'one.{u a v}
+                }
+            }
+    Define (list tree)
+        If [tree.depth = 0]
+            'nil
+            Unfold {depth t list} From {tree.depth tree.root 'nil}
+                Cond {
+                | [depth > 1]
+                    Let depth [depth - 1]
+                    In
+                    Match t {
+                    | 'one.{u a v}
+                        (Fold depth u [a & (Fold depth v list)])
+                    | 'two.{u a v b w}
+                        Let list 
+                            (Fold depth v
+                                [b & (Fold depth w list)])
+                        In
+                        (Fold depth u [a & list])
+                    }
+                | [depth = 1]
+                    Match t {
+                    | 'one.a [a & list]
+                    | 'two.{a b} [a & b & list]
+                    }
+                }
+    In
+    Define (size tree)
+        tree.size
+    Define (new items)
+        (LIST.reduce items empty insert)
+    In
+    {
+    : compare
+    : item_key
+    : size
+    : new
+    : empty
+    : insert
+    : search
+    : list
+    }
+
+Where
+
+Let STDIO Package "stdio"
+Let LIST Package "list"

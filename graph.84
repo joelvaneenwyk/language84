@@ -1,0 +1,104 @@
+GRAPH
+
+Where
+
+Define (GRAPH MAP SET)
+    Define (graph_vertices g)
+        (LIST.map (MAP.list g) [Func {v _} v])
+    In
+    Define (strongly_connected_components g)
+        Let unreachable_depth (MAP.size g)
+        In
+        Let result_empty {'nil unreachable_depth 'bottom}
+        Define (result_is_empty {components depth _})
+            Match components {
+            | 'nil [depth = unreachable_depth]
+            | _ False
+            }
+        Define (result_components {components _ _})
+            components
+        Define (tree_merge a b)
+            Match a {
+            | 'bottom b
+            | _ Match b { | 'bottom a | _ 'across.{a b} }
+            }
+        Define (tree_flatten tree)
+            Unfold {tree vertices} From {tree 'nil}
+                Match tree {
+                | 'bottom vertices
+                | 'up.{v tree} [v & (Fold tree vertices)]
+                | 'across.{left right} (Fold left (Fold right vertices))
+                }
+        In
+        Define (probe v vs_path marked)
+            Match (MAP.search vs_path v) {
+            | 'nothing
+                Match (SET.search marked v) {
+                | 'nothing
+                    Let ws
+                        Match (MAP.search g v) {
+                        | 'just.{_ ws} ws
+                        | 'nothing 'nil
+                        }
+                    Let ws_path (MAP.insert vs_path {v (MAP.size vs_path)})
+                    In
+                    {'nonterminal.{ws ws_path} (SET.insert marked v)}
+                | 'just._ {'terminal.result_empty marked}
+                }
+            | 'just.{_ depth}
+                {'terminal.{'nil depth 'bottom} marked}
+            }
+        Define (result_extend {components work_depth work} v vs_path)
+            Let tree 'up.{v work}
+            In
+            If [work_depth < (MAP.size vs_path)]
+                {components work_depth tree}
+                {[tree & components] unreachable_depth 'bottom}
+        Define (result_merge a b)
+            Cond {
+            | (result_is_empty a) b
+            | (result_is_empty b) a
+            | True
+                Let {a_comps a_depth a_work} a
+                Let {b_comps b_depth b_work} b
+                In
+                Let comps (LIST.append b_comps a_comps)
+                Let depth (Z.min b_depth a_depth)
+                Let work (tree_merge b_work a_work)
+                In
+                {comps depth work}
+            }
+        In
+        Let {result _}
+            Unfold {vs vs_path marked} From {(graph_vertices g) MAP.empty SET.empty}
+                Match vs {
+                | 'nil {result_empty marked}
+                | 'cons.{v vs}
+                    Let {v_result marked}
+                        Let {mode marked} (probe v vs_path marked)
+                        In
+                        Match mode {
+                        | 'terminal.v_result {v_result marked}
+                        | 'nonterminal.{ws ws_path}
+                            Let {ws_result marked} (Fold ws ws_path marked)
+                            In
+                            {(result_extend ws_result v vs_path) marked}
+                        }
+                    In
+                    Let {vs_result marked} (Fold vs vs_path marked)
+                    In
+                    {(result_merge v_result vs_result) marked}
+                }
+        In
+        (LIST.reverse (LIST.map (result_components result) tree_flatten))
+    In
+    {
+    : strongly_connected_components
+    }
+
+Where
+
+Let LIST Package "list"
+Let SEARCH Package "search"
+Let STDIO Package "stdio"
+Let Z Package "z"

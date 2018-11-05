@@ -1,0 +1,138 @@
+{
+: sort
+: gather_imports
+: QUEUE
+}
+
+Where
+
+Let QUEUE
+    Let STRING_SET (SEARCH.SET STRING.compare)
+    In
+    Define (new root_path)
+        Let stack [root_path & 'nil]
+        In
+        {stack (STRING_SET.new stack)}
+    Define (push_all queue paths)
+        (LIST.reduce paths queue
+            Func {queue path}
+                Let {stack filter} queue
+                In
+                Match (STRING_SET.search filter path) {
+                | 'nothing {[path & stack] (STRING_SET.insert filter path)}
+                | 'just._ queue
+                })
+    Define (pop {stack filter})
+        Match stack {
+        | 'nil 'nothing
+        | 'cons.{path stack} 'just.{path {stack filter}}
+        }
+    In
+    {
+    : new
+    : push_all
+    : pop
+    }
+
+Define (sort packages)
+    Let components
+        Let MAP (SEARCH.MAP STRING.compare [Func {path _} path])
+        Let SET (SEARCH.SET STRING.compare)
+        In
+        Let G (GRAPH MAP SET)
+        Let g (MAP.new (LIST.map packages [Func p {p.path p.imports}]))
+        In
+        (G.strongly_connected_components g)
+    Define (is_self_referential package)
+        (LIST.reduce package.imports False
+            Func {b path}
+                (Or b (STRING.equal path package.path)))
+    In
+    (LIST.fold components 'succeed.'nil
+        Func {component result}
+            Match result {
+            | 'fail._ result
+            | 'succeed.ordered_packages
+                Match component {
+                | 'cons.{path paths}
+                    Match paths {
+                    | 'cons._ 'fail.component
+                    | 'nil
+                        Define (has_matching_path package)
+                            (STRING.equal path package.path)
+                        In
+                        Match (LIST.filter packages has_matching_path) {
+                        | 'cons.{package _}
+                            If (is_self_referential package)
+                                'fail.[package & 'nil]
+                                'succeed.[package & ordered_packages]
+                        }
+                    }
+                }
+            })
+
+Define (gather_imports expr)
+    Let SET (SEARCH.SET STRING.compare)
+    In
+    Let f
+        Let empty Func set set
+        In
+        Unfold exprs From [expr & 'nil]
+            Match exprs {
+            | 'nil empty
+            | 'cons.{expr exprs}
+                Let g (Fold exprs)
+                Let f
+                    Match expr {
+                    | 'true empty
+                    | 'false empty
+                    | 'num._ empty
+                    | 'str._ empty
+                    | 'package.path [Func set (SET.insert set path)]
+                    | 'prim._ empty
+                    | 'var._ empty
+                    | 'chain.{expr _} (Fold [expr & 'nil])
+                    | 'tuple.exprs (Fold exprs)
+                    | 'record.{_ inits} (Fold inits)
+                    | 'block.{binders expr}
+                        (Fold
+                            (LIST.cons expr
+                                (LIST.map binders
+                                    Func binder
+                                        Match binder {
+                                        | 'let.{_ expr} expr
+                                        })))
+                    | 'app.{func args} (Fold [func & args])
+                    | 'func.{_ expr} (Fold [expr & 'nil])
+                    | 'iterate.{_ inits expr} (Fold [expr & inits])
+                    | 'continue.exprs (Fold exprs)
+                    | 'unfold.{_ inits expr} (Fold [expr & inits])
+                    | 'fold.exprs (Fold exprs)
+                    | 'cond.clauses
+                        (Fold
+                            (LIST.concat_map clauses
+                                Func {test body}
+                                    [test & body & 'nil]))
+                    | 'if.{test then else}
+                        (Fold [test & then & else & 'nil])
+                    | 'and.{test then}
+                        (Fold [test & then & 'nil])
+                    | 'or.{test else}
+                        (Fold [test & else & 'nil])
+                    | 'labeled.{_ expr} (Fold [expr & 'nil])
+                    | 'match.{expr clauses}
+                        (Fold [expr & (LIST.map clauses [Func {_ body} body])])
+                    }
+                In
+                [f >> g]
+            }
+    In
+    (SET.list (f SET.empty))
+
+Where
+
+Let GRAPH Package "graph"
+Let LIST Package "list"
+Let OS Package "os"
+Let SEARCH Package "search"
+Let STRING Package "string"

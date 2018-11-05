@@ -1,0 +1,22 @@
+{
+: is_letter
+: is_digit
+: is_upper
+: is_lower
+}
+
+Where
+
+Define (is_letter c)
+    (Or (is_lower c) (is_upper c))
+
+Where
+
+Define (is_digit c)
+    (And [`0` <= c] [c <= `9`])
+
+Define (is_upper c)
+    (And [`A` <= c] [c <= `Z`])
+
+Define (is_lower c)
+    (And [`a` <= c] [c <= `z`])

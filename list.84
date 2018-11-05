@@ -1,0 +1,140 @@
+{
+: cons
+: fold
+: reduce
+: for_each
+: for_each_numbered
+: iota
+: map
+: filter
+: length
+: reverse
+: reverse_append
+: append
+: concat
+: concat_map
+: fetch
+: zip
+: unzip
+: last
+: join
+: repeat
+}
+
+Where
+
+Define (cons head tail)
+    [head & tail]
+
+Define (map list transform)
+    (fold list 'nil Func {elem list} [(transform elem) & list])
+
+Define (iota n)
+    Unfold i From 0
+        If [i = n]
+            'nil
+            [i & (Fold [i + 1])]
+
+Define (filter list pred)
+    (fold list 'nil Func {elem list} If (pred elem) [elem & list] list)
+
+Define (length list)
+    (reduce list 0
+        Func {count _} [count + 1])
+
+Define (concat lists)
+    (fold lists 'nil append)
+
+Define (concat_map list f)
+    (fold list 'nil
+        Func {item items} (append (f item) items))
+
+Define (fetch list n)
+    If [n < 0]
+        'nothing
+        Iterate {list n}
+            Match list {
+            | 'cons.{item list}
+                If [n = 0]
+                    'just.item
+                    (Continue list [n - 1])
+            | 'nil 'nothing
+            }
+
+Define (zip a b)
+    Iterate {a b z} From {a b 'nil}
+        Match a {
+        | 'cons.{ai a}
+            Match b {
+            | 'cons.{bi b} (Continue a b [{ai bi} & z])
+            | 'nil (reverse z)
+            }
+        | 'nil (reverse z)
+        }
+
+Define (unzip list)
+    (fold list {'nil 'nil}
+        Func {{a b} {as bs}} {[a & as] [b & bs]})
+
+Define (last items)
+    (reduce items 'nothing Func {_ item} 'just.item)
+
+Define (join glue items)
+    (fold items 'nil
+        Func {item items}
+            Match items {
+            | 'nil [item & 'nil]
+            | 'cons._ [item & glue & items]
+            })
+
+Define (repeat n elem)
+    Unfold n
+        If [n = 0] 'nil [elem & (Fold [n - 1])]
+
+Where
+
+Define (append left right) (reverse_append (reverse left) right)
+
+Where
+
+Define (reverse list) (reverse_append list 'nil)
+
+Where
+
+Define (reverse_append queue tail)
+    (reduce queue tail
+        Func {list elem} [elem & list])
+
+Where
+
+Define (fold list nil cons)
+    Unfold list
+        Match list {
+        | 'nil nil
+        | 'cons.{elem list} (cons elem (Fold list))
+        }
+
+Define (reduce list zero plus)
+    Iterate {list sum} From {list zero}
+        Match list {
+        | 'nil sum
+        | 'cons.{elem list} (Continue list (plus sum elem))
+        }
+
+Define (for_each list command)
+    Iterate list
+        Begin Match list {
+        | 'nil
+        | 'cons.{elem list}
+            (command elem)
+            (Continue list)
+        }
+
+Define (for_each_numbered list command)
+    Iterate {i list} From {0 list}
+        Begin Match list {
+        | 'nil
+        | 'cons.{elem list}
+            (command i elem)
+            (Continue [i + 1] list)
+        }

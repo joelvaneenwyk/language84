@@ -1,0 +1,39 @@
+{
+: list_insertion_on_heap
+: list_insertion_on_stack
+: list_insertion list_insertion_on_heap
+}
+
+Where
+
+Define (list_insertion_on_heap compare input)
+    Define (insert sorted a)
+        Iterate {left right} From {'nil sorted}
+            Match right {
+            | 'nil (LIST.reverse [a & left])
+            | 'cons.{b right_tail}
+                Match (compare a b) {
+                | 'less (LIST.reverse_append left [a & right])
+                | _ (Continue [b & left] right_tail)
+                }
+            }
+    In
+    (LIST.reduce input 'nil insert)
+
+Define (list_insertion_on_stack compare input)
+    Define (insert sorted a)
+        Unfold sorted
+            Match sorted {
+            | 'nil [a & 'nil]
+            | 'cons.{b sorted_tail}
+                Match (compare a b) {
+                | 'less [a & sorted]
+                | _ [b & (Fold sorted_tail)]
+                }
+            }
+    In
+    (LIST.reduce input 'nil insert)
+
+Where
+
+Let LIST Package "list"

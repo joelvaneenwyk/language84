@@ -1,0 +1,25 @@
+{
+: read_all
+: with_output_file
+}
+
+Where
+
+Define (read_all file_name)
+    Begin {
+        Let fd (OS.file_open file_name)
+        Let text (OS.file_read_all fd)
+        (OS.file_close fd)
+        (Return text)
+    }
+
+Define (with_output_file file_name func)
+    Begin {
+        Let file (OS.file_create file_name)
+        (func file)
+        (OS.file_close file)
+    }
+
+Where
+
+Let OS Package "os"

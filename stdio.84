@@ -1,0 +1,12 @@
+{
+: print
+: print_line
+}
+
+Where
+
+Define (print s)
+    (Prim print s)
+
+Define (print_line s)
+    (Prim print_line s)

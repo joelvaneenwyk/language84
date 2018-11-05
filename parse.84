@@ -1,0 +1,926 @@
+{
+: file
+}
+
+Where
+
+Define (file text)
+    (parse text expand (rule 'file_block))
+
+Where
+
+Define (parse text expand parser)
+    Let {i token} (SCAN.token text (SCAN.whitespace text 0))
+    In
+    Iterate {parser cont peek i} From {parser 'halt 'pure.token i}
+        Match parser {
+        | 'rule.term (Continue (expand term) cont peek i)
+        | 'fail.message 'fail.{message i}
+        | 'peek (Continue peek cont peek i)
+        | 'pop
+            Let {i token} (SCAN.token text (SCAN.whitespace text i))
+            In
+            (Continue peek cont 'pure.token i)
+        | 'pure.x
+            Match cont {
+            | 'halt 'succeed.x
+            | 'bind1.{f cont} (Continue (f x) cont peek i)
+            }
+        | 'bind1.{p1 f} (Continue p1 'bind1.{f cont} peek i)
+        }
+
+Define (expand term)
+    Match term {
+    | 'file_block file_block
+    | 'expr expr
+    | 'binder_group binder_group
+    | 'binder binder
+    | 'block_body block_body
+    | 'stmt stmt
+    | 'begin_body begin_body
+    | 'sequence2.{parser termination_check} (sequence2 parser termination_check)
+    | 'sequence.{parser maybe_terminator} (sequence parser maybe_terminator)
+    | 'chain chain
+    | 'define_pattern define_pattern
+    }
+
+Where
+
+Let file_block
+    (lift2 (rule 'expr)
+        (sequence (ignore1 (match "Where") (rule 'binder_group)) 'nothing)
+        Func {expr binder_groups}
+            (LIST.reduce binder_groups expr
+                Func {expr binders}
+                    'block.{(LIST.reverse binders) expr}))
+
+Let expr
+    Let okay (pure {})
+    In
+    Define (check token)
+        Match token {
+        | 'eof (fail "Unexpected end of file.")
+        | 'op.name
+            If (Or (STRING.equal name "-") (STRING.equal name "!"))
+                okay
+                (fail "Unexpected unary operator.")
+        | 'sym.text
+            Cond {
+            | (STRING.equal text "(") okay
+            | (STRING.equal text "{") okay
+            | (STRING.equal text "[") okay
+            | (STRING.equal text "'") okay
+            | (STRING.equal text "True") okay
+            | (STRING.equal text "False") okay
+            | (STRING.equal text "If") okay
+            | (STRING.equal text "Cond") okay
+            | (STRING.equal text "Match") okay
+            | (STRING.equal text "Func") okay
+            | (STRING.equal text "Package") okay
+            | (STRING.equal text "Block") okay
+            | (STRING.equal text "Iterate") okay
+            | (STRING.equal text "Unfold") okay
+            | (STRING.equal text "Begin") okay
+            | (STRING.equal text "When") okay
+            | True (fail "Unexpected token while parsing expression.")
+            }
+        | _ okay
+        }
+    Define (go token)
+        Match token {
+        | 'num.n (pure 'num.n)
+        | 'str.s (pure 'str.s)
+        | 'op.name
+            Cond {
+            | (STRING.equal name "-")
+                (lift1 (rule 'expr)
+                    Func expr 'app.{'prim."negate" [expr & 'nil]})
+            | (STRING.equal name "!")
+                (lift1 (rule 'expr)
+                    Func expr 'if.{expr 'false 'true})
+            }
+        | 'id.name
+            (if_match "."
+                (lift1 chain
+                    Func chain 'chain.{'var.name chain})
+                (pure 'var.name))
+        | 'sym.text
+            Cond {
+            | (STRING.equal text "(")
+                (bind1 peek
+                    Func token
+                        Let maybe_parser
+                            Match token {
+                            | 'sym.s (special_app_parser 'expr s)
+                            | _ 'nothing
+                            }
+                        In
+                        Match maybe_parser {
+                        | 'just.parser
+                            (ignore1 pop parser)
+                        | 'nothing
+                            (lift2 (rule 'expr) (sequence (rule 'expr) 'just.")")
+                                Func {func args} 'app.{func args})
+                        })
+            | (STRING.equal text "{")
+                Let record_init
+                    (bind2
+                        (ignore1 (match ":") id)
+                        (lift1 peek
+                            Func token
+                                Match token {
+                                | 'sym.s
+                                    (Or (STRING.equal s ":") (STRING.equal s "}"))
+                                | _ False
+                                })
+                        Func {name is_expr_omitted}
+                            If is_expr_omitted
+                                (pure {name 'var.name})
+                                (lift1 (rule 'expr)
+                                    Func expr {name expr}))
+                In
+                (if_can_match ":"
+                    (lift1 (sequence record_init 'just."}")
+                        Func labels_and_inits
+                            'record.(LIST.unzip labels_and_inits))
+                    (lift1 (sequence (rule 'expr) 'just."}")
+                        Func exprs
+                            Match (extract_singleton exprs) {
+                            | 'nothing 'tuple.exprs
+                            | 'just.expr expr
+                            }))
+            | (STRING.equal text "[")
+                (bind2 (rule 'expr)
+                    (sequence 
+                        (lift2 op (rule 'expr)
+                            Func {op right} {op right})
+                        'just."]")
+                    Func {left pairs}
+                        Match pairs {
+                        | 'nil (pure left)
+                        | 'cons.{pair pairs}
+                            Let {op right} pair
+                            In
+                            Let ops_match
+                                (LIST.reduce pairs True
+                                    Func {flag {later_op _}}
+                                        (And flag (STRING.equal later_op op)))
+                            Let rights
+                                (LIST.map pairs
+                                    Func {_ right} right)
+                            In
+                            If ops_match
+                                (infix_expr op left [right & rights])
+                                (fail "Ambiguous infix expression.")
+                        })
+            | (STRING.equal text "'")
+                (lift2 id (if_match "." (rule 'expr) (pure empty_tuple))
+                    Func {label expr} 'labeled.{label expr})
+            | (STRING.equal text "True")
+                (pure 'true)
+            | (STRING.equal text "False")
+                (pure 'false)
+            | (STRING.equal text "If")
+                (lift3 (rule 'expr) (rule 'expr) (rule 'expr)
+                    Func {test then else} 'if.{test then else})
+            | (STRING.equal text "Cond")
+                Let cond_clause
+                    (ignore1 (match "|")
+                        (lift2 (rule 'expr) (rule 'block_body)
+                            Func {test body} {test body}))
+                In
+                (ignore1 (match "{")
+                    (lift1 (sequence cond_clause 'just."}")
+                        Func clauses 'cond.clauses))
+            | (STRING.equal text "Match")
+                Let match_clause
+                    (ignore1 (match "|")
+                        (lift2 match_pattern (rule 'block_body)
+                            Func {pat body} {pat body}))
+                In
+                (lift2 (rule 'expr)
+                    (ignore1 (match "{") (sequence match_clause 'just."}"))
+                    Func {expr clauses} 'match.{expr clauses})
+            | (STRING.equal text "Func")
+                (lift2
+                    (if_match "{"
+                        (sequence pattern 'just."}")
+                        (if_match "_"
+                            (pure ['ignore & 'nil])
+                            (lift1 id
+                                Func name ['var.name & 'nil])))
+                    (rule 'block_body)
+                    Func {pats body} 'func.{pats body})
+            | (STRING.equal text "Package")
+                (bind1 peek
+                    Func token
+                        Match token {
+                        | 'str.s
+                            Define (strip_quotes s)
+                                (STRING.clip s 1 [(STRING.length s) - 1])
+                            In
+                            (ignore1 pop (pure 'package.(strip_quotes s)))
+                        | _ (fail "Malformed Package expression.")
+                        })
+            | (STRING.equal text "Block")
+                (rule 'block_body)
+            | (STRING.equal text "Iterate")
+                (bind2
+                    (if_match "{"
+                        (sequence simple_pattern 'just."}")
+                        (lift1 id
+                            Func name [name & 'nil]))
+                    (if_match "From"
+                        (lift1
+                            (if_match "{"
+                                (sequence (rule 'expr) 'just."}")
+                                (lift1 (rule 'expr) [Func expr [expr & 'nil]]))
+                            Func inits 'just.inits)
+                        (pure 'nothing))
+                    Func {vars maybe_inits}
+                        Let inits
+                            Match maybe_inits {
+                            | 'just.inits inits
+                            | 'nothing (LIST.map vars [Func name 'var.name])
+                            }
+                        In
+                        If [(LIST.length vars) != (LIST.length inits)]
+                            (fail "Wrong number of initializers.")
+                            (lift1 (rule 'block_body)
+                                Func expr 'iterate.{vars inits expr}))
+            | (STRING.equal text "Unfold")
+                (bind2
+                    (if_match "{"
+                        (sequence simple_pattern 'just."}")
+                        (lift1 id
+                            Func name [name & 'nil]))
+                    (if_match "From"
+                        (lift1
+                            (if_match "{"
+                                (sequence (rule 'expr) 'just."}")
+                                (lift1 (rule 'expr) [Func expr [expr & 'nil]]))
+                            Func inits 'just.inits)
+                        (pure 'nothing))
+                    Func {vars maybe_inits}
+                        Let inits
+                            Match maybe_inits {
+                            | 'just.inits inits
+                            | 'nothing (LIST.map vars [Func name 'var.name])
+                            }
+                        In
+                        If [(LIST.length vars) != (LIST.length inits)]
+                            (fail "Wrong number of initializers.")
+                            (lift1 (rule 'block_body)
+                                Func expr 'unfold.{vars inits expr}))
+            | (STRING.equal text "Begin")
+                (rule 'begin_body)
+            | (STRING.equal text "When")
+                (lift2 (rule 'expr) (rule 'begin_body)
+                    Func {test then} 'if.{test then empty_tuple})
+            }
+        }
+    In
+    (ignore1 (bind1 peek check) (bind1 pop go))
+
+Let binder_group
+    (bind1 peek
+        Func token
+            Let has_binder
+                Match token {
+                | 'sym.s (Or (STRING.equal s "Let") (STRING.equal s "Define"))
+                | _ False
+                }
+            In
+            If has_binder
+                (lift2 (rule 'binder) (rule 'binder_group) LIST.cons)
+                (pure 'nil))
+
+Let binder
+    Let let_binder
+        (lift2
+            (if_match "{"
+                (lift1 (sequence simple_pattern 'just."}")
+                    Func vars
+                        Match (extract_singleton vars) {
+                        | 'nothing 'tuple.vars
+                        | 'just.name 'var.name
+                        })
+                (lift1 id
+                    Func name 'var.name))
+            (rule 'block_body)
+            Func {pat expr} 'let.{pat expr})
+    Let define_binder
+        (lift2 (rule 'define_pattern) (rule 'block_body)
+            Func {{name pats_chain} expr}
+                Let expr
+                    (LIST.reduce pats_chain expr
+                        Func {expr pats} 'func.{pats expr})
+                In
+                'let.{'var.name expr})
+    In
+    (bind1 peek
+        Func token
+            Let maybe_binder
+                Match token {
+                | 'sym.s
+                    Cond {
+                    | (STRING.equal s "Let") 'just.let_binder
+                    | (STRING.equal s "Define") 'just.define_binder
+                    | True 'nothing
+                    }
+                | _ 'nothing
+                }
+            In
+            Match maybe_binder {
+            | 'nothing (fail "Expected binder.")
+            | 'just.binder (ignore1 pop binder)
+            })
+
+Let block_body
+    (bind1 peek
+        Func token
+            Let has_binder
+                Match token {
+                | 'sym.s (Or (STRING.equal s "Let") (STRING.equal s "Define"))
+                | _ False
+                }
+            In
+            If has_binder
+                (lift2 (rule 'binder_group) (ignore1 (match "In") (rule 'block_body))
+                    Func {binders expr} 'block.{(LIST.reverse binders) expr})
+                (rule 'expr))
+
+Let stmt
+    Let okay (pure {})
+    In
+    Define (check token)
+        Match token {
+        | 'eof (fail "Unexpected end of file.")
+        | 'sym.text
+            Cond {
+            | (STRING.equal text "(") okay
+            | (STRING.equal text "[") okay
+            | (STRING.equal text "If") okay
+            | (STRING.equal text "Cond") okay
+            | (STRING.equal text "Match") okay
+            | (STRING.equal text "Block") okay
+            | (STRING.equal text "Iterate") okay
+            | (STRING.equal text "Unfold") okay
+            | (STRING.equal text "Begin") okay
+            | (STRING.equal text "When") okay
+            | True (fail "Unexpected token while parsing statement.")
+            }
+        | _ (fail "Unexpected token while parsing statement.")
+        }
+    Define (go token)
+        Match token {
+        | 'sym.text
+            Cond {
+            | (STRING.equal text "(")
+                (bind1 (ignore1 pop peek)
+                    Func token
+                        Let maybe_parser
+                            Match token {
+                            | 'sym.s (special_app_parser 'stmt s)
+                            | _ 'nothing
+                            }
+                        In
+                        Match maybe_parser {
+                        | 'just.parser
+                            (ignore1 pop parser)
+                        | 'nothing
+                            (lift2 (rule 'expr) (sequence (rule 'expr) 'just.")")
+                                Func {func args} 'app.{func args})
+                        })
+            | True (rule 'expr)
+            }
+        }
+    In
+    (bind1 peek
+        Func token
+            Let has_binder
+                Match token {
+                | 'sym.s (Or (STRING.equal s "Let") (STRING.equal s "Define"))
+                | _ False
+                }
+            In
+            If has_binder
+                (rule 'binder)
+                (ignore1 (bind1 peek check) (bind1 peek go)))
+
+Let begin_body
+    Let statements
+        Define (termination_check token)
+            Match token {
+            | 'sym.s (Or (STRING.equal s "|") (STRING.equal s "}"))
+            | _ False
+            }
+        Define (combine_statements stmts)
+            Match (LIST.reverse stmts) {
+            | 'nil empty_tuple
+            | 'cons.{final_term definite_stmts}
+                Let {stmts expr}
+                    Match final_term {
+                    | 'return.exprs
+                        {
+                            definite_stmts
+                            Match (extract_singleton exprs) {
+                            | 'nothing 'tuple.exprs
+                            | 'just.expr expr
+                            }
+                        }
+                    | 'continue._
+                        {
+                            definite_stmts
+                            final_term
+                        }
+                    | 'let.{pat expr}
+                        {
+                            definite_stmts
+                            expr
+                        }
+                    | _
+                        {
+                            'cons.{final_term definite_stmts}
+                            empty_tuple
+                        }
+                    }
+                In
+                Iterate {expr stmts binders} From {expr stmts 'nil}
+                    Match stmts {
+                    | 'nil
+                        Match binders {
+                        | 'nil expr
+                        | 'cons._ 'block.{(LIST.reverse binders) expr}
+                        }
+                    | 'cons.{stmt stmts}
+                        Match stmt {
+                        | 'let._
+                            Let expr
+                                Match binders {
+                                | 'nil expr
+                                | 'cons._
+                                    'block.{(LIST.reverse binders) expr}
+                                }
+                            In
+                            Let expr 'block.{[stmt & 'nil] expr}
+                            In
+                            (Continue expr stmts 'nil)
+                        | _
+                            Let binder 'let.{empty_tuple stmt}
+                            In
+                            (Continue expr stmts [binder & binders])
+                        }
+                    }
+            }
+        In
+        (lift1 (sequence2 (rule 'stmt) termination_check)
+            combine_statements)
+    In
+    Let cond_clause
+        (ignore1 (match "|")
+            (lift2 (rule 'expr) statements
+                Func {test body} {test body}))
+    Let match_clause
+        (ignore1 (match "|")
+            (lift2 match_pattern statements
+                Func {pat body} {pat body}))
+    Define (ensure_completeness mode clauses)
+        Let clauses (LIST.reverse clauses)
+        In
+        Match mode {
+        | 'cond
+            Match clauses {
+            | 'nil [{'true empty_tuple} & 'nil]
+            | 'cons.{clause _}
+                Let {test _} clause
+                In
+                (LIST.reverse
+                    Match test {
+                    | 'true clauses
+                    | _ [{'true empty_tuple} & clauses]
+                    })
+            }
+        | 'match
+            Match clauses {
+            | 'nil [{'default empty_tuple} & 'nil]
+            | 'cons.{clause _}
+                Let {pat _} clause
+                In
+                (LIST.reverse
+                    Match pat {
+                    | 'default clauses
+                    | _ [{'default empty_tuple} & clauses]
+                    })
+            }
+        }
+    In
+    (if_match "Cond"
+        (ignore1 (match "{")
+            (lift1 (sequence cond_clause 'just."}")
+                Func clauses 'cond.(ensure_completeness 'cond clauses)))
+        (if_match "Match"
+            (bind1 (rule 'expr)
+                Func expr
+                    (ignore1 (match "{")
+                        (lift1 (sequence match_clause 'just."}")
+                            Func clauses
+                                Let clauses (ensure_completeness 'match clauses)
+                                In
+                                'match.{expr clauses})))
+            (ignore1 (match "{")
+                (lift2 statements (match "}")
+                    Func {expr _} expr))))
+
+Where
+
+Define (special_app_parser mode s)
+    Let maybe_parser
+        Match mode {
+        | 'stmt
+            Cond {
+            | (STRING.equal s "Return")
+                Let parser
+                    (lift1 (sequence (rule 'expr) 'just.")")
+                        Func exprs 'return.exprs)
+                In
+                'just.parser
+            | True 'nothing
+            }
+        | 'expr 'nothing
+        }
+    In
+    Match maybe_parser {
+    | 'just._ maybe_parser
+    | 'nothing
+        Cond {
+        | (STRING.equal s "Prim")
+            Let parser
+                (lift2 id (sequence (rule 'expr) 'just.")")
+                    Func {name args} 'app.{'prim.name args})
+            In
+            'just.parser
+        | (STRING.equal s "Continue")
+            Let parser
+                (lift1 (sequence (rule 'expr) 'just.")")
+                    Func exprs 'continue.exprs)
+            In
+            'just.parser
+        | (STRING.equal s "Fold")
+            Let parser
+                (lift1 (sequence (rule 'expr) 'just.")")
+                    Func exprs 'fold.exprs)
+            In
+            'just.parser
+        | (STRING.equal s "Reduce")
+            Let parser
+                (bind2 op (sequence (rule 'expr) 'just.")")
+                    Func {op exprs}
+                        Match exprs {
+                        | 'nil (fail "Missing arguments.")
+                        | 'cons.{left rights}
+                            Match rights {
+                            | 'nil (pure left)
+                            | 'cons._ (infix_expr op left rights)
+                            }
+                        })
+            In
+            'just.parser
+        | (STRING.equal s "And")
+            Let parser
+                (lift1 (sequence (rule 'expr) 'just.")")
+                    Func exprs
+                        Match exprs {
+                        | 'nil 'true
+                        | 'cons.{expr exprs}
+                            (LIST.reduce exprs expr
+                                Func {conj expr} 'and.{conj expr})
+                        })
+            In
+            'just.parser
+        | (STRING.equal s "Or")
+            Let parser
+                (lift1 (sequence (rule 'expr) 'just.")")
+                    Func exprs
+                        Match exprs {
+                        | 'nil 'false
+                        | 'cons.{expr exprs}
+                            (LIST.reduce exprs expr
+                                Func {disj expr} 'or.{disj expr})
+                        })
+            In
+            'just.parser
+        | True
+            'nothing
+        }
+    }
+
+Let match_pattern
+    Let vars
+        (if_match "{"
+            (lift1 (sequence simple_pattern 'just."}")
+                Func vars
+                    Match (extract_singleton vars) {
+                    | 'nothing 'tuple.vars
+                    | 'just.name 'var.name
+                    })
+            (if_match "_" (pure 'ignore)
+                (lift1 id
+                    Func name 'var.name)))
+    In
+    (bind1 peek
+        Func token
+            Match token {
+            | 'sym.s
+                Cond {
+                | (STRING.equal s "_") (ignore1 pop (pure 'default))
+                | (STRING.equal s "'")
+                    (ignore1 pop
+                        (lift2 id (if_match "." vars (pure empty_tuple))
+                            Func {label vars} 'labeled.{label vars}))
+                | True (fail "Malformed Match pattern.")
+                }
+            | 'eof (fail "Unexpected end of file.")
+            | _ (fail "Malformed Match pattern.")
+            })
+
+Let define_pattern
+    (ignore1 (match "(")
+        (if_can_match "("
+            (lift2 (rule 'define_pattern) (sequence pattern 'just.")")
+                Func {{name more_pats} pats}
+                    {name [pats & more_pats]})
+            (lift2 id (sequence pattern 'just.")")
+                Func {name pats}
+                    {name [pats & 'nil]})))
+
+Where
+
+Define (infix_expr op left rights)
+    Define (app left op right)
+        Cond {
+        | (STRING.equal op "compose_left")
+            'app.{'prim."compose" [left & right & 'nil]}
+        | (STRING.equal op "compose_right")
+            'app.{'prim."compose" [right & left & 'nil]}
+        | (STRING.equal op "apply_left")
+            'app.{left [right & 'nil]}
+        | (STRING.equal op "apply_right")
+            'app.{right [left & 'nil]}
+        | True
+            'app.{'prim.op [left & right & 'nil]}
+        }
+    In
+    Let assoc
+        Cond {
+        | (STRING.equal op "add") 'left
+        | (STRING.equal op "subtract") 'not
+        | (STRING.equal op "multiply") 'left
+        | (STRING.equal op "quotient") 'not
+        | (STRING.equal op "remainder") 'not
+        | (STRING.equal op "less") 'not
+        | (STRING.equal op "greater") 'not
+        | (STRING.equal op "equal") 'not
+        | (STRING.equal op "not_equal") 'not
+        | (STRING.equal op "less_or_equal") 'not
+        | (STRING.equal op "greater_or_equal") 'not
+        | (STRING.equal op "cons") 'right
+        | (STRING.equal op "compose_left") 'right
+        | (STRING.equal op "compose_right") 'left
+        | (STRING.equal op "apply_left") 'right
+        | (STRING.equal op "apply_right") 'left
+        }
+    In
+    Define (reduce_left op left rights)
+        (pure
+            (LIST.reduce rights left
+                Func {left right} (app left op right)))
+    Define (reduce_right op left rights)
+        (pure
+            Match (LIST.reverse [left & rights]) {
+            | 'cons.{right lefts}
+                (LIST.reduce lefts right
+                    Func {right left} (app left op right))
+            })
+    Define (reduce_not op left rights)
+        Match rights {
+        | 'cons.{right rights}
+            Match rights {
+            | 'nil (pure (app left op right))
+            | 'cons._ (fail "No associativity rule for operator.")
+            }
+        }
+    In
+    Let reduce
+        Match assoc {
+        | 'left reduce_left
+        | 'right reduce_right
+        | 'not reduce_not
+        }
+    In
+    (reduce op left rights)
+
+Let pattern
+    (bind1 peek
+        Func token
+            Match token {
+            | 'id.name (ignore1 pop (pure 'var.name))
+            | 'sym.s
+                Cond {
+                | (STRING.equal s "{")
+                    (ignore1 pop
+                        (lift1 (sequence simple_pattern 'just."}")
+                            Func pats 'tuple.pats))
+                | (STRING.equal s "_") (ignore1 pop (pure 'ignore))
+                | True (fail "Invalid pattern.")
+                }
+            | 'eof (fail "Unexpected end of file.")
+            | _ (fail "Unexpected token while parsing pattern.")
+            })
+
+Where
+
+Let simple_pattern
+    (bind1 peek
+        Func token
+            Match token {
+            | 'id.name (ignore1 pop (pure name))
+            | 'sym.s
+                Cond {
+                | (STRING.equal s "_") (ignore1 pop (pure "_"))
+                | True (fail "Invalid pattern.")
+                }
+            | 'eof (fail "Unexpected end of file.")
+            | _ (fail "Unexpected token.")
+            })
+
+Define (sequence2 parser termination_check)
+    (bind1 (lift1 peek termination_check)
+        Func is_terminated
+            If is_terminated
+                (pure 'nil)
+                (lift2 parser (rule 'sequence2.{parser termination_check})
+                    LIST.cons))
+
+Define (sequence parser maybe_terminator)
+    Let check_for_termination
+        (lift1 peek
+            Func token
+                Match token {
+                | 'eof True
+                | 'sym.s
+                    Match maybe_terminator {
+                    | 'nothing False
+                    | 'just.terminator (STRING.equal s terminator)
+                    }
+                | _ False
+                })
+    In
+    (bind1 check_for_termination
+        Func is_terminated
+            If is_terminated
+                (ignore1 pop (pure 'nil))
+                (lift2 parser (rule 'sequence.{parser maybe_terminator}) LIST.cons))
+
+Let chain
+    (bind1 peek
+        Func token
+            Let access
+                Match token {
+                | 'id.name (ignore1 pop (pure 'id.name))
+                | 'num.n (ignore1 pop (pure 'num.n))
+                | 'eof (fail "Unexpected end of file.")
+                | _ (fail "Unexpected token.")
+                }
+            In
+            (lift2 access (if_match "." (rule 'chain) (pure 'nil))
+                Func {access chain} [access & chain]))
+
+Where
+
+Let id
+    (bind1 peek
+        Func token
+            Match token {
+            | 'id.name (ignore1 pop (pure name))
+            | 'eof (fail "Unexpected end of file.")
+            | _ (fail "Unexpected token.")
+            })
+
+Let op
+    Define (long_name s)
+        Cond {
+        | (STRING.equal s "+") "add"
+        | (STRING.equal s "-") "subtract"
+        | (STRING.equal s "*") "multiply"
+        | (STRING.equal s "/") "quotient"
+        | (STRING.equal s "%") "remainder"
+        | (STRING.equal s "<") "less"
+        | (STRING.equal s ">") "greater"
+        | (STRING.equal s "=") "equal"
+        | (STRING.equal s "!=") "not_equal"
+        | (STRING.equal s "<=") "less_or_equal"
+        | (STRING.equal s ">=") "greater_or_equal"
+        | (STRING.equal s "&") "cons"
+        | (STRING.equal s "<<") "compose_left"
+        | (STRING.equal s ">>") "compose_right"
+        | (STRING.equal s "<-") "apply_left"
+        | (STRING.equal s "->") "apply_right"
+        }
+    In
+    (bind1 peek
+        Func token
+            Match token {
+            | 'op.s (ignore1 pop (pure (long_name s)))
+            | _ (fail "Unexpected token.")
+            })
+
+Where
+
+Define (match s)
+    (bind1 peek
+        Func token
+            If (is_symbol_with_text token s)
+                pop
+                (fail (STRING.concat ["Expected \"" & s & "\"." & 'nil])))
+
+Define (if_match s then else)
+    (bind1 peek
+        Func token
+            If (is_symbol_with_text token s)
+                (ignore1 pop then)
+                else)
+
+Define (if_can_match s then else)
+    (bind1 peek
+        Func token
+            If (is_symbol_with_text token s)
+                then
+                else)
+
+Where
+
+Define (is_symbol_with_text token s)
+    Match token {
+    | 'sym.t (STRING.equal s t)
+    | _ False
+    }
+
+Define (extract_singleton items)
+    Match items {
+    | 'nil 'nothing
+    | 'cons.{item more_items}
+        Match more_items {
+        | 'nil 'just.item
+        | 'cons._ 'nothing
+        }
+    }
+
+Let empty_tuple 'tuple.'nil
+
+Where
+
+Define (lift3 p1 p2 p3 f)
+    (bind1 p1
+        Func x1
+            (bind1 p2
+                Func x2
+                    (bind1 p3
+                        Func x3 (pure (f x1 x2 x3)))))
+
+Define (lift2 p1 p2 f)
+    (bind1 p1
+        Func x1
+            (bind1 p2
+                Func x2 (pure (f x1 x2))))
+
+Define (lift1 p1 f)
+    (bind1 p1
+        Func x1 (pure (f x1)))
+
+Define (bind2 p1 p2 f)
+    (bind1 p1
+        Func x1
+            (bind1 p2
+                Func x2 (f x1 x2)))
+
+Define (ignore1 p1 p2)
+    (bind1 p1
+        Func _ p2)
+
+Where
+
+Let pop 'pop
+Let peek 'peek
+Define (rule term) 'rule.term
+Define (fail message) 'fail.message
+Define (pure x) 'pure.x
+Define (bind1 p1 f) 'bind1.{p1 f}
+
+Where
+
+Let LIST Package "list"
+Let OS Package "os"
+Let SCAN Package "scan"
+Let STDIO Package "stdio"
+Let STRING Package "string"

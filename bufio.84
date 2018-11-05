@@ -1,0 +1,140 @@
+{
+: new_writer
+: new_writer2
+: write_all
+: write_byte
+: write
+: flush
+: with_writer
+}
+
+Where
+
+Define (with_writer fd size func)
+    Let w (new_writer2 fd size)
+    In
+    Begin {
+        (func w)
+        (IO.flush w)
+    }
+
+Where
+
+Define (new_writer2 fd size)
+    Define (write w bytes start size)
+        (write w.state bytes start size)
+    Define (write_all w bytes)
+        (write_all w.state bytes)
+    Define (write_byte w byte)
+        (write_byte w.state byte)
+    Define (flush w)
+        (flush w.state)
+    In
+    {
+    : interface {: write : write_all : write_byte : flush}
+    : state (new_writer fd size)
+    }
+
+Where
+
+Define (write_all w bytes)
+    (write w bytes 0 (CHUNK.size bytes))
+
+Where
+
+Define (write_byte w byte)
+    Begin {
+        When [(fetch_top w) = (size w)] {
+            (flush w)
+        }
+        Begin {
+            Let top (fetch_top w)
+            (CHUNK.store_byte w [8 + top] byte)
+            (store_top w [top + 1])
+        }
+    }
+
+Define (write w bytes start count)
+    Let fd (fetch_fd w)
+    Let size (size w)
+    In
+    Iterate {start count}
+        Let top (fetch_top w)
+        In
+        Let room [size - top]
+        In
+        Begin Cond {
+        | [count > room]
+            (Return
+                Begin Cond {
+                | [top = 0]
+                    Let r (OS.write fd bytes start count)
+                    When [r <= 0] {
+                        (OS.die "Failed to write bytes.")
+                    }
+                    (Continue [start + r] [count - r])
+                | True
+                    (CHUNK.store_bytes w [8 + top] bytes start room)
+                    (store_top w size)
+                    (flush w)
+                    (Continue [start + room] [count - room])
+                })
+        | True
+            (CHUNK.store_bytes w [8 + top] bytes start count)
+            (store_top w [top + count])
+        }
+
+Where
+
+Define (new_writer fd size)
+    Begin {
+        Let w (alloc size)
+        (init w fd)
+        (Return w)
+    }
+
+Define (flush w)
+    Let fd (fetch_fd w)
+    Let top (fetch_top w)
+    In
+    When [top > 0] {
+        Let r (OS.write fd w 8 top)
+        When [r != top] {
+            (OS.die "Failed to flush buffer.")
+        }
+        (store_top w 0)
+    }
+
+Where
+
+Define (alloc size)
+    (CHUNK.new [8 + size])
+
+Define (init w fd)
+    Begin {
+        (store_fd w fd)
+    }
+
+Where
+
+Define (store_fd w fd)
+    (CHUNK.store_uint32 w 0 fd)
+
+Define (fetch_fd w)
+    (CHUNK.fetch_uint32 w 0)
+
+Define (store_top w top)
+    (CHUNK.store_uint32 w 4 top)
+
+Define (fetch_top w)
+    (CHUNK.fetch_uint32 w 4)
+
+Define (size w)
+    [(CHUNK.size w) - 8]
+
+Where
+
+Let CHUNK Package "chunk"
+Let IO Package "io"
+Let OS Package "os"
+Let STDIO Package "stdio"

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+{
+    xargs echo "programs =" <programs
+    while read program
+    do
+        echo $program: $program.c
+    done <programs
+} >programs.make

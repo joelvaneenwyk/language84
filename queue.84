@@ -1,0 +1,84 @@
+{
+: empty
+: new
+: is_empty
+: push
+: pop
+: pop_all
+: append
+: concat
+}
+
+Where
+
+Define (concat queues)
+    (LIST.reduce queues empty append)
+
+Where
+
+Define (pop_all queue)
+    Unfold queue
+        Match (pop queue) {
+        | 'nothing 'nil
+        | 'just.{item queue} [item & (Fold queue)]
+        }
+
+Define (push_all queue items)
+    (LIST.reduce items queue push)
+
+Define (append a b)
+    Iterate {a b} From {a b}
+        Match (pop b) {
+        | 'nothing a
+        | 'just.{item b} (Continue (push a item) b)
+        }
+
+Where
+
+Define (push queue item)
+    {
+    : incoming [item & queue.incoming]
+    : outgoing queue.outgoing
+    }
+
+Define (pop queue)
+    Unfold queue
+        Match queue.outgoing {
+        | 'cons.{item outgoing}
+            Let queue
+                {
+                : incoming queue.incoming
+                : outgoing
+                }
+            In
+            'just.{item queue}
+        | 'nil
+            Match queue.incoming {
+            | 'nil 'nothing
+            | _ (Fold (new (LIST.reverse queue.incoming)))
+            }
+        }
+
+Where
+
+Define (new init)
+    {
+    : incoming 'nil
+    : outgoing init
+    }
+
+Let empty
+    {
+    : incoming 'nil
+    : outgoing 'nil
+    }
+
+Define (is_empty queue)
+    Match queue.incoming {
+    | 'nil Match queue.outgoing { | 'nil True | 'cons._ False }
+    | 'cons._ False
+    }
+
+Where
+
+Let LIST Package "list"

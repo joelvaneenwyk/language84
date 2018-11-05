@@ -1,0 +1,138 @@
+{
+: file_create
+: file_open
+: file_close
+: file_read_all
+: die
+: argc
+: argv
+: O_RDONLY 0
+: O_WRONLY 1
+: O_RDWR 2
+: O_CREAT 64
+: O_TRUNC 512
+: O_CLOEXEC [512 * 1024]
+: PROT_READ 1
+: PROT_WRITE 2
+: PROT_EXEC 4
+: MAP_SHARED 1
+: MAP_PRIVATE 2
+: EPOLL_CTL_ADD 1
+: EPOLL_CTL_DEL 2
+: EPOLL_CTL_MOD 3
+: EPOLL_CLOEXEC [512 * 1024]
+: EPOLLIN 1
+: EPOLLOUT 4
+: EPOLLERR 8
+: EPOLLHUP 16
+: exec
+: exit
+: getcwd
+: open
+: close
+: read
+: write
+: mmap
+: munmap
+: epoll_create1
+: epoll_wait
+: epoll_ctl
+}
+
+Where
+
+Define (file_create name)
+    (Prim file_create name)
+
+Define (file_open name)
+    (Prim file_open name)
+
+Define (file_close file)
+    (Prim file_close file)
+
+Define (file_read_all file)
+    (Prim file_read_all file)
+
+Define (die message)
+    (Prim die message)
+
+Let argc (Prim command_argc)
+
+Define (argv i)
+    (Prim command_argv i)
+
+Define (exec path args vars)
+    Let path_offset 0
+    Let arg_offsets (CHUNK.new [4 * (LIST.length args)])
+    Let var_offsets (CHUNK.new [4 * (LIST.length vars)])
+    Let table
+        Let path_size [(STRING.length path) + 1]
+        Let args_size
+            (LIST.reduce args 0
+                Func {sum arg} [sum + (STRING.length arg) + 1])
+        Let vars_size
+            (LIST.reduce vars 0
+                Func {sum var} [sum + (STRING.length var) + 1])
+        In
+        (CHUNK.new [path_size + args_size + vars_size])
+    In
+    Define (store_strings strings offsets prefix_size)
+        Let {_ prefix_size}
+            (LIST.reduce strings {0 prefix_size}
+                Func {{i offset} s}
+                    Begin {
+                        (CHUNK.store_uint32 offsets [4 * i] offset)
+                        (CHUNK.store_bytes table offset s 0 (STRING.length s))
+                        (CHUNK.store_byte table [offset + (STRING.length s)] 0)
+                        (Return [i + 1] [offset + (STRING.length s) + 1])
+                    })
+        In
+        prefix_size
+    In
+    Begin {
+        (CHUNK.store_bytes table 0 path 0 (STRING.length path))
+        (CHUNK.store_byte table (STRING.length path) 0)
+        Let prefix_size [(STRING.length path) + 1]
+        Let prefix_size (store_strings args arg_offsets prefix_size)
+        Let prefix_size (store_strings vars var_offsets prefix_size)
+        (Return (Prim exec path_offset arg_offsets var_offsets table))
+    }
+
+Define (exit status)
+    (Prim exit status)
+
+Define (getcwd)
+    (Prim getcwd)
+
+Define (open name flags mode)
+    (Prim open name flags mode)
+
+Define (close fd)
+    (Prim close fd)
+
+Define (read fd chunk start count)
+    (Prim read fd chunk start count)
+
+Define (write fd chunk start count)
+    (Prim write fd chunk start count)
+
+Define (mmap i size prot flags fd offset)
+    (Prim mmap i size prot flags fd offset)
+
+Define (munmap i)
+    (Prim munmap i)
+
+Define (epoll_create1 flags)
+    (Prim epoll_create1 flags)
+
+Define (epoll_wait epoll_fd events max_events timeout)
+    (Prim epoll_wait epoll_fd events max_events timeout)
+
+Define (epoll_ctl epoll_fd op fd event)
+    (Prim epoll_ctl epoll_fd op fd event)
+
+Where
+
+Let CHUNK Package "chunk"
+Let LIST Package "list"
+Let STRING Package "string"

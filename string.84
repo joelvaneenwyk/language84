@@ -1,0 +1,49 @@
+{
+: append
+: concat
+: join
+: equal
+: length
+: fetch
+: clip
+: compare
+}
+
+Where
+
+Define (join glue strings)
+    (concat (LIST.join glue strings))
+
+Where
+
+Define (concat strings) (LIST.reduce strings "" append)
+
+Where
+
+Define (compare a b)
+    Let sign (Prim string_compare a b)
+    In
+    Cond {
+    | [sign = -1] 'less
+    | [sign = 0] 'equal
+    | [sign = 1] 'greater
+    }
+
+Define (append s1 s2)
+    (Prim string_append s1 s2)
+
+Define (equal s1 s2)
+    (Prim string_equal s1 s2)
+
+Define (length s)
+    (Prim string_length s)
+
+Define (fetch s i)
+    (Prim string_fetch s i)
+
+Define (clip s begin end)
+    (Prim string_clip s begin end)
+
+Where
+
+Let LIST Package "list"

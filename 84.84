@@ -1,0 +1,100 @@
+Begin {
+    Let {mode root_path}
+        Begin {
+            Let usage "usage: 84 [-x] <program>"
+            Let i 1
+            When [i >= OS.argc] {
+                (OS.die usage)
+            }
+            Let {mode i}
+                If (STRING.equal (OS.argv i) "-x")
+                    {'experimental [i + 1]}
+                    {'stable i}
+            When [i != [OS.argc - 1]] {
+                (OS.die usage)
+            }
+            (Return mode (OS.argv i))
+        }
+    Let packages
+        Let QUEUE PACKAGE.QUEUE
+        In
+        Iterate {queue packages} From {(QUEUE.new root_path) 'nil}
+            Begin Match (QUEUE.pop queue) {
+            | 'nothing (Return packages)
+            | 'just.{path queue}
+                Let file_name (STRING.append path ".84")
+                Let text (FILE.read_all file_name)
+                (Return
+                    Begin Match (PARSE.file text) {
+                    | 'succeed.expr
+                        Let imports (PACKAGE.gather_imports expr)
+                        Let package {: path : imports : expr}
+                        Let queue (QUEUE.push_all queue imports)
+                        (Continue queue [package & packages])
+                    | 'fail.{message i}
+                        (SYNTAX_ERROR.show file_name text message i)
+                        (Return (OS.die "Compilation failed."))
+                    })
+            }
+    Let packages
+        Begin Match (PACKAGE.sort packages) {
+        | 'succeed.packages (Return packages)
+        | 'fail.component
+            (STDIO.print "Cyclic package dependencies: ")
+            (STDIO.print (STRING.join ", " component))
+            (STDIO.print_line ".")
+            (Return (OS.die "Compilation failed."))
+        }
+    Let paths (LIST.map packages [Func package package.path])
+    Let program
+        Begin {
+            Let exprs (LIST.map packages [Func package package.expr])
+            Let exprs
+                (LIST.map exprs
+                    [COMPILE.elaborate_recursion >> COMPILE.collect_free_variables])
+            Let modules (COMPILE.lift_functions exprs)
+            Let packages
+                (LIST.map (LIST.zip packages modules)
+                    Func {package {init functions}}
+                        {
+                        : path package.path
+                        : imports package.imports
+                        : init
+                        : functions
+                        })
+            Let program (COMPILE.collect_constants packages)
+            Let program (COMPILE.elaborate_patterns program)
+            (Return program)
+        }
+    Begin {
+        Define (output file_name emitter)
+            (FILE.with_output_file file_name
+                Func fd (BUFIO.with_writer fd 1024 emitter))
+        (output (STRING.append root_path ".c")
+            Func w (C.emit w program))
+        (output (STRING.append root_path ".c.d")
+            Func w Begin {
+                (IO.write_all w (STRING.append root_path ".c: "))
+                (IO.write_all w
+                    (STRING.join " "
+                        (LIST.map paths
+                            Func path (STRING.append path ".84"))))
+                (IO.write_byte w `\n`)
+            })
+    }
+}
+
+Where
+
+Let BUFIO Package "bufio"
+Let C Package "c"
+Let COMPILE Package "compile"
+Let FILE Package "file"
+Let IO Package "io"
+Let LIST Package "list"
+Let OS Package "os"
+Let PACKAGE Package "package"
+Let PARSE Package "parse"
+Let STDIO Package "stdio"
+Let STRING Package "string"
+Let SYNTAX_ERROR Package "syntax_error"

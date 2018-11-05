@@ -1,0 +1,1253 @@
+{
+: elaborate_recursion
+: collect_free_variables
+: lift_functions
+: collect_constants
+: elaborate_patterns
+}
+
+Where
+
+Define (lift_functions exprs)
+    Let {_ modules}
+        (LIST.fold exprs {1 'nil}
+            Func {expr {i modules}}
+                Let {init i functions} (lift_functions i expr)
+                In
+                {i [{init functions} & modules]})
+    In
+    modules
+
+Where
+
+Define (elaborate_recursion expr)
+    Define (pure x) 'pure.x
+    Define (lift1 c1 f) 'lift1.{c1 f}
+    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
+    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
+    Define (sequence cs) 'sequence.cs
+    Define (push_loop expr) 'push_loop.expr
+    Define (use expr) 'use.expr
+    Define (pass expr) 'pass.expr
+    In
+    Define (compile expr)
+        Match expr {
+        | 'true (pure expr)
+        | 'false (pure expr)
+        | 'num._ (pure expr)
+        | 'str._ (pure expr)
+        | 'package._ (pure expr)
+        | 'prim._ (pure expr)
+        | 'var._ (pure expr)
+        | 'chain.{expr chain}
+            (lift1 (use expr)
+                Func expr 'chain.{expr chain})
+        | 'tuple.exprs
+            (lift1 (sequence (LIST.map exprs use))
+                Func exprs 'tuple.exprs)
+        | 'record.{labels inits}
+            (lift1 (sequence (LIST.map inits use))
+                Func inits 'record.{labels inits})
+        | 'block.{binders expr}
+            Define (compile_binder binder)
+                Match binder {
+                | 'let.{pat body}
+                    (lift1 (use body)
+                        Func body 'let.{pat body})
+                }
+            In
+            (lift2 (sequence (LIST.map binders compile_binder)) (pass expr)
+                Func {binders expr} 'block.{binders expr})
+        | 'app.{func args}
+            (lift2 (use func) (sequence (LIST.map args use))
+                Func {func args} 'app.{func args})
+        | 'func.{param_pats expr}
+            (lift1 (use expr)
+                Func expr 'func.{param_pats expr})
+        | 'iterate.{vars inits expr}
+            (lift2 (sequence (LIST.map inits use)) (push_loop expr)
+                Func {inits expr} 'iterate.{vars inits expr})
+        | 'continue.exprs
+            (lift1 (sequence (LIST.map exprs use))
+                Func exprs 'continue.exprs)
+        | 'unfold.{vars inits expr}
+            Let tagged_vars (LIST.map vars [Func name 'var.name])
+            In
+            (pass
+                'block.{
+                    [
+                        'let.{
+                            'var."Fold"
+                            'func.{
+                                ['var."Fold" & tagged_vars]
+                                'iterate.{vars tagged_vars expr}
+                            }
+                        }
+                        & 'nil
+                    ]
+                    'app.{'var."Fold" ['var."Fold" & inits]}
+                })
+        | 'fold.exprs
+            (pass 'app.{'var."Fold" ['var."Fold" & exprs]})
+        | 'cond.clauses
+            Define (compile_clause {test body})
+                (lift2 (use test) (pass body)
+                    Func clause clause)
+            In
+            (lift1 (sequence (LIST.map clauses compile_clause))
+                Func clauses 'cond.clauses)
+        | 'if.{test then else}
+            (lift3 (use test) (pass then) (pass else)
+                Func {test then else} 'if.{test then else})
+        | 'not.expr
+            (lift1 (use expr)
+                Func expr 'not.expr)
+        | 'and.{test then}
+            (lift2 (use test) (pass then)
+                Func {test then} 'and.{test then})
+        | 'or.{test else}
+            (lift2 (use test) (pass else)
+                Func {test else} 'or.{test else})
+        | 'labeled.{label expr}
+            (lift1 (use expr)
+                Func expr 'labeled.{label expr})
+        | 'match.{expr clauses}
+            Define (compile_clause {pat body})
+                (lift1 (pass body)
+                    Func body {pat body})
+            In
+            (lift2 (use expr) (sequence (LIST.map clauses compile_clause))
+                Func {expr clauses} 'match.{expr clauses})
+        }
+    In
+    Unfold {command context} From {(compile expr) 'other}
+        Match command {
+        | 'pure.expr expr
+        | 'lift1.{c1 f} (f (Fold c1 context))
+        | 'lift2.{c1 c2 f} (f (Fold c1 context) (Fold c2 context))
+        | 'lift3.{c1 c2 c3 f}
+            (f (Fold c1 context) (Fold c2 context) (Fold c3 context))
+        | 'sequence.cs
+            Match cs {
+            | 'nil 'nil
+            | 'cons.{c cs}
+                'cons.{(Fold c context) (Fold 'sequence.cs context)}
+            }
+        | 'push_loop.expr (Fold 'pass.expr 'loop)
+        | 'use.expr (Fold (compile expr) 'other)
+        | 'pass.expr
+            Let expr
+                Match context {
+                | 'loop
+                    Match expr {
+                    | 'fold.exprs 'continue.exprs
+                    | _ expr
+                    }
+                | 'other expr
+                }
+            In
+            (Fold (compile expr) context)
+        }
+
+Define (collect_free_variables expr)
+    Define (pure x) 'pure.x
+    Define (lift1 c1 f) 'lift1.{c1 f}
+    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
+    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
+    Define (collect name) 'collect.name
+    Define (in_context vars c) 'in_context.{vars c}
+    Define (eval expr) 'eval.expr
+    Define (eval_func vars expr) 'eval_func.{vars expr}
+    In
+    Define (sequence cs)
+        (LIST.fold cs (pure 'nil)
+            Func {c1 c2} (lift2 c1 c2 LIST.cons))
+    In
+    Define (compile expr)
+        Match expr {
+        | 'true (pure expr)
+        | 'false (pure expr)
+        | 'num._ (pure expr)
+        | 'str._ (pure expr)
+        | 'package._ (pure expr)
+        | 'prim._ (pure expr)
+        | 'var.name (lift1 (collect name) [Func _ expr])
+        | 'chain.{expr chain}
+            (lift1 (eval expr)
+                Func expr 'chain.{expr chain})
+        | 'tuple.exprs
+            (lift1 (sequence (LIST.map exprs eval))
+                Func exprs 'tuple.exprs)
+        | 'record.{labels inits}
+            (lift1 (sequence (LIST.map inits eval))
+                Func inits 'record.{labels inits})
+        | 'block.{binders expr}
+            Let vars (LIST.concat_map binders binder_variables)
+            Let binder_exprs (LIST.map binders binder_expr)
+            In
+            (lift2 (sequence (LIST.map binder_exprs eval))
+                (in_context vars (eval expr))
+                Func {binder_exprs expr}
+                    Let binders
+                        (LIST.map (LIST.zip binders binder_exprs)
+                            Func {binder expr}
+                                Match binder {
+                                | 'let.{pat _} 'let.{pat expr}
+                                })
+                    In
+                    'block.{binders expr})
+        | 'app.{func args}
+            (lift2 (eval func) (sequence (LIST.map args eval))
+                Func {func args} 'app.{func args})
+        | 'func.{param_pats expr}
+            Let vars (LIST.concat_map param_pats pattern_variables)
+            In
+            (lift1 (eval_func vars expr)
+                Func {func_free_list expr}
+                    'func.{func_free_list param_pats expr})
+        | 'iterate.{vars inits expr}
+            (lift2 (sequence (LIST.map inits eval)) (in_context vars (eval expr))
+                Func {inits expr} 'iterate.{vars inits expr})
+        | 'continue.exprs
+            (lift1 (sequence (LIST.map exprs eval))
+                Func exprs 'continue.exprs)
+        | 'cond.clauses
+            Define (compile_clause {test body})
+                (lift2 (eval test) (eval body)
+                    Func clause clause)
+            In
+            (lift1 (sequence (LIST.map clauses compile_clause))
+                Func clauses 'cond.clauses)
+        | 'if.{test then else}
+            (lift3 (eval test) (eval then) (eval else)
+                Func {test then else} 'if.{test then else})
+        | 'not.expr
+            (lift1 (eval expr)
+                Func expr 'not.expr)
+        | 'and.{test then}
+            (lift2 (eval test) (eval then)
+                Func {test then} 'and.{test then})
+        | 'or.{test else}
+            (lift2 (eval test) (eval else)
+                Func {test else} 'or.{test else})
+        | 'labeled.{label expr}
+            (lift1 (eval expr)
+                Func expr 'labeled.{label expr})
+        | 'match.{expr clauses}
+            Define (compile_clause {pat body})
+                Let vars
+                    Match pat {
+                    | 'default 'nil
+                    | 'labeled.{_ pat} (pattern_variables pat)
+                    }
+                In
+                (lift1 (in_context vars (eval body))
+                    Func body {pat body})
+            In
+            (lift2 (eval expr) (sequence (LIST.map clauses compile_clause))
+                Func {expr clauses} 'match.{expr clauses})
+        }
+    In
+    Let SET (SEARCH.SET STRING.compare)
+    Let MAP
+        (SEARCH.MAP
+            STRING.compare
+            Func var var.name)
+    In
+    Define (insert_each env depth vars)
+        (LIST.reduce vars env
+            Func {env var} (MAP.insert env {: name var : depth}))
+    Define (maybe_insert env depth free name)
+        Match (MAP.search env name) {
+        | 'just.var
+            If [var.depth < depth]
+                (SET.insert free name)
+                free
+        | 'nothing
+            (die
+                (STRING.concat
+                    ["Variable \"" & name & "\" is not bound." & 'nil]))
+        }
+    In
+    Let {expr _}
+        Unfold {command env depth free} From {'eval.expr MAP.empty 0 SET.empty}
+            Match command {
+            | 'pure.x {x free}
+            | 'lift1.{c1 f}
+                Let {x1 free} (Fold c1 env depth free)
+                In
+                {(f x1) free}
+            | 'lift2.{c1 c2 f}
+                Let {x1 free} (Fold c1 env depth free)
+                In
+                Let {x2 free} (Fold c2 env depth free)
+                In
+                {(f x1 x2) free}
+            | 'lift3.{c1 c2 c3 f}
+                Let {x1 free} (Fold c1 env depth free)
+                In
+                Let {x2 free} (Fold c2 env depth free)
+                In
+                Let {x3 free} (Fold c3 env depth free)
+                In
+                {(f x1 x2 x3) free}
+            | 'collect.name {{} (maybe_insert env depth free name)}
+            | 'in_context.{vars c}
+                Let env (insert_each env depth vars)
+                In
+                (Fold c env depth free)
+            | 'eval.expr (Fold (compile expr) env depth free)
+            | 'eval_func.{vars expr}
+                Let {expr func_free}
+                    Let depth [depth + 1]
+                    In
+                    Let env (insert_each env depth vars)
+                    In
+                    (Fold (compile expr) env depth SET.empty)
+                In
+                Let func_free_list (SET.list func_free)
+                In
+                Let free
+                    (LIST.reduce func_free_list free
+                        Func {free name} (maybe_insert env depth free name))
+                In
+                {{func_free_list expr} free}
+            }
+    In
+    expr
+
+Define (lift_functions i expr)
+    Define (pure x) 'pure.x
+    Define (lift1 c1 f) 'lift1.{c1 f}
+    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
+    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
+    Define (bind1 c1 f) 'bind1.{c1 f}
+    Define (lookup var) 'lookup.var
+    Define (in_context bindings c) 'in_context.{bindings c}
+    Define (insert_func f) 'insert_func.f
+    Define (eval expr) 'eval.expr
+    In
+    Define (sequence cs)
+        (LIST.fold cs (pure 'nil)
+            Func {c1 c2} (lift2 c1 c2 LIST.cons))
+    In
+    Define (compile expr)
+        Match expr {
+        | 'true (pure expr)
+        | 'false (pure expr)
+        | 'num._ (pure expr)
+        | 'str._ (pure expr)
+        | 'package._ (pure expr)
+        | 'prim._ (pure expr)
+        | 'var._ (pure expr)
+        | 'chain.{expr chain}
+            (lift1 (eval expr)
+                Func expr 'chain.{expr chain})
+        | 'tuple.exprs
+            (lift1 (sequence (LIST.map exprs eval))
+                Func exprs 'tuple.exprs)
+        | 'record.{labels inits}
+            (lift1 (sequence (LIST.map inits eval))
+                Func inits 'record.{labels inits})
+        | 'block.{binders expr}
+            Let binder_exprs (LIST.map binders binder_expr)
+            In
+            (bind1 (sequence (LIST.map binder_exprs eval))
+                Func binder_exprs
+                    Let binders
+                        (LIST.map (LIST.zip binders binder_exprs)
+                            Func {binder expr}
+                                Match binder {
+                                | 'let.{pat _} 'let.{pat expr}
+                                })
+                    In
+                    Let bindings
+                        (LIST.concat_map binders
+                            Func binder
+                                Match binder {
+                                | 'let.{pat expr}
+                                    Match pat {
+                                    | 'ignore 'nil
+                                    | 'var.var
+                                        Match expr {
+                                        | 'closure.{i _ num_params}
+                                            [{var 'func.{i num_params}} & 'nil]
+                                        | _ [{var 'expr} & 'nil]
+                                        }
+                                    | 'tuple.vars
+                                        (LIST.map vars
+                                            Func var {var 'expr})
+                                    }
+                                })
+                    In
+                    (lift1 (in_context bindings (eval expr))
+                        Func expr 'block.{binders expr}))
+        | 'app.{func args}
+            Match func {
+            | 'var.var
+                (bind1 (lookup var)
+                    Func expr
+                        Match expr {
+                        | 'func.{i num_params}
+                            Let num_args (LIST.length args)
+                            In
+                            Let {}
+                                Let is_compatible
+                                    (Or [num_params = num_args]
+                                        [num_params = 1]
+                                        [num_args = 1])
+                                In
+                                When !is_compatible {
+                                    (die "Protocol mismatch in function application.")
+                                }
+                            In
+                            (lift2 (eval func) (sequence (LIST.map args eval))
+                                Func {func args}
+                                    If [num_params = num_args]
+                                        'app_known.{i func args}
+                                        'app.{func args})
+                        | 'expr
+                            (lift2 (eval func) (sequence (LIST.map args eval))
+                                Func {func args} 'app.{func args})
+                        })
+            | _
+                (lift2 (eval func) (sequence (LIST.map args eval))
+                    Func {func args} 'app.{func args})
+            }
+        | 'func.{free param_pats expr}
+            Let bindings
+                (LIST.map (LIST.concat_map param_pats pattern_variables)
+                    Func var {var 'expr})
+            In
+            (bind1 (in_context bindings (eval expr))
+                Func expr
+                    (insert_func
+                        Func i
+                            Let closure 'closure.{i free (LIST.length param_pats)}
+                            Let func 'func.{i free param_pats expr}
+                            In
+                            {closure func}))
+        | 'iterate.{vars inits expr}
+            Let bindings
+                (LIST.map vars
+                    Func var {var 'expr})
+            In
+            (lift2 (sequence (LIST.map inits eval)) (in_context bindings (eval expr))
+                Func {inits expr} 'iterate.{vars inits expr})
+        | 'continue.exprs
+            (lift1 (sequence (LIST.map exprs eval))
+                Func exprs 'continue.exprs)
+        | 'cond.clauses
+            Define (compile_clause {test body})
+                (lift2 (eval test) (eval body)
+                    Func clause clause)
+            In
+            (lift1 (sequence (LIST.map clauses compile_clause))
+                Func clauses 'cond.clauses)
+        | 'if.{test then else}
+            (lift3 (eval test) (eval then) (eval else)
+                Func {test then else} 'if.{test then else})
+        | 'not.expr
+            (lift1 (eval expr)
+                Func expr 'not.expr)
+        | 'and.{test then}
+            (lift2 (eval test) (eval then)
+                Func {test then} 'and.{test then})
+        | 'or.{test else}
+            (lift2 (eval test) (eval else)
+                Func {test else} 'or.{test else})
+        | 'labeled.{label expr}
+            (lift1 (eval expr)
+                Func expr 'labeled.{label expr})
+        | 'match.{expr clauses}
+            Define (compile_clause {pat body})
+                Let bindings
+                    Match pat {
+                    | 'default 'nil
+                    | 'labeled.{_ pat}
+                        (LIST.map (pattern_variables pat)
+                            Func var {var 'expr})
+                    }
+                In
+                (lift1 (in_context bindings (eval body))
+                    Func body {pat body})
+            In
+            (lift2 (eval expr) (sequence (LIST.map clauses compile_clause))
+                Func {expr clauses} 'match.{expr clauses})
+        }
+    In
+    Let MAP
+        (SEARCH.MAP STRING.compare
+            Func {key _} key)
+    In
+    Unfold {command env i funcs} From {'eval.expr MAP.empty i 'nil}
+        Match command {
+        | 'pure.x {x i funcs}
+        | 'lift1.{c1 f}
+            Let {x1 i funcs} (Fold c1 env i funcs)
+            In
+            {(f x1) i funcs}
+        | 'lift2.{c1 c2 f}
+            Let {x1 i funcs} (Fold c1 env i funcs)
+            In
+            Let {x2 i funcs} (Fold c2 env i funcs)
+            In
+            {(f x1 x2) i funcs}
+        | 'lift3.{c1 c2 c3 f}
+            Let {x1 i funcs} (Fold c1 env i funcs)
+            In
+            Let {x2 i funcs} (Fold c2 env i funcs)
+            In
+            Let {x3 i funcs} (Fold c3 env i funcs)
+            In
+            {(f x1 x2 x3) i funcs}
+        | 'bind1.{c1 f}
+            Let {x1 i funcs} (Fold c1 env i funcs)
+            In
+            (Fold (f x1) env i funcs)
+        | 'lookup.var
+            Match (MAP.search env var) {
+            | 'just.{_ expr} {expr i funcs}
+            | 'nothing (die "No var.")
+            }
+        | 'in_context.{bindings c}
+            Let env (LIST.reduce bindings env MAP.insert)
+            In
+            (Fold c env i funcs)
+        | 'insert_func.f
+            Let {x func} (f i)
+            In
+            {x [i + 1] [func & funcs]}
+        | 'eval.expr (Fold (compile expr) env i funcs)
+        }
+
+Define (collect_constants program)
+    Define (pure x) 'pure.x
+    Define (lift1 c1 f) 'lift1.{c1 f}
+    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
+    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
+    Define (bind1 c1 f) 'bind1.{c1 f}
+    Define (intern_string s) 'intern_string.s
+    Define (intern_label name) 'intern_label.name
+    Define (intern_layout layout) 'intern_layout.layout
+    Define (eval expr) 'eval.expr
+    In
+    Define (sequence cs)
+        (LIST.fold cs (pure 'nil)
+            Func {c1 c2} (lift2 c1 c2 LIST.cons))
+    In
+    Let package_table
+        Let MAP (SEARCH.MAP STRING.compare [Func {key _} key])
+        In
+        Let {_ map}
+            (LIST.reduce program {0 MAP.empty}
+                Func {{i map} package}
+                    {[i + 1] (MAP.insert map {package.path i})})
+        In
+        Define (lookup path)
+            Match (MAP.search map path) {
+            | 'just.{_ i} i
+            }
+        In
+        {: lookup}
+    In
+    Define (compile expr)
+        Match expr {
+        | 'true (pure expr)
+        | 'false (pure expr)
+        | 'num._ (pure expr)
+        | 'str.s (intern_string s)
+        | 'package.path (pure 'package.(package_table.lookup path))
+        | 'var._ (pure expr)
+        | 'chain.{expr chain}
+            Define (compile_access access)
+                Match access {
+                | 'id.name
+                    (lift1 (intern_label name)
+                        Func id 'record_fetch.id)
+                | 'num.i (pure 'tuple_fetch.i)
+                }
+            In
+            (lift2 (eval expr) (sequence (LIST.map chain compile_access))
+                Func {expr chain} 'chain.{expr chain})
+        | 'tuple.exprs
+            (lift1 (sequence (LIST.map exprs eval))
+                Func exprs 'tuple.exprs)
+        | 'record.{labels inits}
+            (bind1 (sequence (LIST.map labels intern_label))
+                Func ids
+                    Let {layout inits}
+                        Define (sort pairs)
+                            (SORT.list_insertion
+                                Func {{i _} {j _}} (Z.compare i j)
+                                pairs)
+                        In
+                        (LIST.unzip (sort (LIST.zip ids inits)))
+                    In
+                    (lift2 (intern_layout layout) (sequence (LIST.map inits eval))
+                        Func {layout_id inits}
+                            'record.{layout_id inits}))
+        | 'block.{binders expr}
+            Let binder_exprs (LIST.map binders binder_expr)
+            In
+            (lift2 (sequence (LIST.map binder_exprs eval)) (eval expr)
+                Func {binder_exprs expr}
+                    Let binders
+                        (LIST.map (LIST.zip binders binder_exprs)
+                            Func {binder expr}
+                                Match binder {
+                                | 'let.{pat _} 'let.{pat expr}
+                                })
+                    In
+                    'block.{binders expr})
+        | 'app_known.{j func args}
+            (lift2 (sequence (LIST.map args eval)) (eval func)
+                Func {args func} 'closure_app_known.{j func args})
+        | 'app.{func args}
+            Match func {
+            | 'prim.name
+                Cond {
+                | (STRING.equal name "cons")
+                    (eval 'labeled.{"cons" 'tuple.args})
+                | (STRING.equal name "not_equal")
+                    (eval 'if.{'app.{'prim."equal" args} 'false 'true})
+                | True
+                    (lift1 (sequence (LIST.map args eval))
+                        Func args 'prim_app.{name args})
+                }
+            | _
+                (lift2 (sequence (LIST.map args eval)) (eval func)
+                    Func {args func} 'closure_app.{func args})
+            }
+        | 'closure._ (pure expr)
+        | 'func.{j free param_pats expr}
+            (lift1 (eval expr)
+                Func expr 'func.{j free param_pats expr})
+        | 'iterate.{vars inits expr}
+            (lift2 (sequence (LIST.map inits eval)) (eval expr)
+                Func {inits expr} 'iterate.{vars inits expr})
+        | 'continue.exprs
+            (lift1 (sequence (LIST.map exprs eval))
+                Func exprs 'continue.exprs)
+        | 'cond.clauses
+            Define (compile_clause {test body})
+                (lift2 (eval test) (eval body)
+                    Func clause clause)
+            In
+            (lift1 (sequence (LIST.map clauses compile_clause))
+                Func clauses 'cond.clauses)
+        | 'if.{test then else}
+            (lift3 (eval test) (eval then) (eval else)
+                Func {test then else} 'if.{test then else})
+        | 'not.expr
+            (lift1 (eval expr)
+                Func expr 'not.expr)
+        | 'and.{test then}
+            (lift2 (eval test) (eval then)
+                Func {test then} 'and.{test then})
+        | 'or.{test else}
+            (lift2 (eval test) (eval else)
+                Func {test else} 'or.{test else})
+        | 'labeled.{label expr}
+            (bind1 (intern_label label)
+                Func id
+                    (lift1 (eval expr)
+                        Func expr 'labeled.{id expr}))
+        | 'match.{expr clauses}
+            Define (compile_clause {pat body})
+                Match pat {
+                | 'default
+                    (lift1 (eval body)
+                        Func body {pat body})
+                | 'labeled.{label vars}
+                    (lift2 (intern_label label) (eval body)
+                        Func {id body} {'labeled.{id vars} body})
+                }
+            In
+            (lift2 (eval expr) (sequence (LIST.map clauses compile_clause))
+                Func {expr clauses} 'match.{expr clauses})
+        }
+    In
+    Let command
+        Define (eval_package package)
+            (lift2 (eval package.init) (sequence (LIST.map package.functions eval))
+                Func {init functions}
+                    {
+                    : path package.path
+                    : imports package.imports
+                    : init
+                    : functions
+                    })
+        In
+        (lift3 (intern_label "nil") (intern_label "cons")
+            (sequence (LIST.map program eval_package))
+            Func {nil_label cons_label packages}
+                {nil_label cons_label packages})
+    Let state
+        Let string_env {STRING_ID_MAP.empty 0}
+        Let label_env
+            {
+            : name_of_id ID_LABEL_MAP.empty
+            : id_of_name LABEL_ID_MAP.empty
+            : i 0
+            }
+        Let layout_env
+            {
+            : indexes 'nil
+            : map LAYOUT_ID_MAP.empty
+            : i 0
+            }
+        In
+        {string_env label_env layout_env}
+    In
+    Let {output state}
+        Unfold {command state}
+            Match command {
+            | 'pure.x {x state}
+            | 'lift1.{c1 f}
+                Let {x1 state} (Fold c1 state)
+                In
+                {(f x1) state}
+            | 'lift2.{c1 c2 f}
+                Let {x1 state} (Fold c1 state)
+                In
+                Let {x2 state} (Fold c2 state)
+                In
+                {(f x1 x2) state}
+            | 'lift3.{c1 c2 c3 f}
+                Let {x1 state} (Fold c1 state)
+                In
+                Let {x2 state} (Fold c2 state)
+                In
+                Let {x3 state} (Fold c3 state)
+                In
+                {(f x1 x2 x3) state}
+            | 'bind1.{c1 f}
+                Let {x1 state} (Fold c1 state)
+                In
+                (Fold (f x1) state)
+            | 'intern_string.s
+                Let {string_env label_env layout_env} state
+                In
+                Let {map i} string_env
+                In
+                Match (STRING_ID_MAP.search map s) {
+                | 'nothing
+                    Let map (STRING_ID_MAP.insert map {s i})
+                    In
+                    {'const.i {{map [i + 1]} label_env layout_env}}
+                | 'just.{_ j}
+                    {'const.j state}
+                }
+            | 'intern_label.name
+                Let {string_env label_env layout_env} state
+                In
+                Match (LABEL_ID_MAP.search label_env.id_of_name name) {
+                | 'just.{_ i} {i state}
+                | 'nothing
+                    Let i label_env.i
+                    In
+                    Let label_env
+                        {
+                        : name_of_id (ID_LABEL_MAP.insert label_env.name_of_id {i name})
+                        : id_of_name (LABEL_ID_MAP.insert label_env.id_of_name {name i})
+                        : i [i + 1]
+                        }
+                    In
+                    {i {string_env label_env layout_env}}
+                }
+            | 'intern_layout.layout
+                Let {string_env label_env layout_env} state
+                In
+                Match (LAYOUT_ID_MAP.search layout_env.map layout) {
+                | 'just.{_ i} {i state}
+                | 'nothing
+                    Let i layout_env.i
+                    In
+                    Let layout_env
+                        {
+                        : map (LAYOUT_ID_MAP.insert layout_env.map {layout i})
+                        : indexes [layout & layout_env.indexes]
+                        : i [i + (LIST.length layout) + 1]
+                        }
+                    In
+                    {i {string_env label_env layout_env}}
+                }
+            | 'eval.expr (Fold (compile expr) state)
+            }
+    In
+    Let {nil_label cons_label packages} output
+    Let {string_env label_env layout_env} state
+    In
+    Let constants
+        Let {map _} string_env
+        In
+        (LIST.map
+            (SORT.list_insertion
+                Func {{_ i} {_ j}} (Z.compare i j)
+                (STRING_ID_MAP.list map))
+            Func {s _} s)
+    Let record_indexes (LIST.reverse layout_env.indexes)
+    Let label_names (ID_LABEL_MAP.list label_env.name_of_id)
+    In
+    {
+    : constants
+    : label_names
+    : record_indexes
+    : packages
+    : nil_label
+    : cons_label
+    }
+
+Where
+
+Let STRING_ID_MAP (SEARCH.MAP STRING.compare [Func {key _} key])
+
+Let LABEL_ID_MAP (SEARCH.MAP STRING.compare [Func {key _} key])
+Let ID_LABEL_MAP (SEARCH.MAP Z.compare [Func {key _} key])
+
+Let LAYOUT_ID_MAP
+    (SEARCH.MAP
+        Func {a b}
+            Let m (LIST.length a)
+            Let n (LIST.length b)
+            In
+            Cond {
+            | [m < n] 'less
+            | [m > n] 'greater
+            | True
+                (LIST.reduce (LIST.zip a b) 'equal
+                    Func {relation {ai bi}}
+                        Match relation {
+                        | 'equal
+                            Cond {
+                            | [ai < bi] 'less
+                            | [ai > bi] 'greater
+                            | True 'equal
+                            }
+                        | _ relation
+                        })
+            }
+        Func {key _} key)
+
+Define (elaborate_patterns program)
+    Let VAR_MAP (SEARCH.MAP STRING.compare [Func {key _} key])
+    In
+    Let packages
+        (LIST.map program.packages
+            Func package
+                Let functions
+                    (LIST.map package.functions
+                        Func function
+                            (elaborate_patterns VAR_MAP 0 VAR_MAP.empty
+                                'nothing function))
+                Let init
+                    (elaborate_patterns VAR_MAP 0 VAR_MAP.empty
+                        'nothing package.init)
+                In
+                {
+                : path package.path
+                : imports package.imports
+                : functions
+                : init
+                })
+    In
+    {
+    : packages
+    : constants program.constants
+    : label_names program.label_names
+    : record_indexes program.record_indexes
+    : nil_label program.nil_label
+    : cons_label program.cons_label
+    }
+
+Where
+
+Define (elaborate_patterns VAR_MAP m env loop expr)
+    Define (fresh_var m)
+        {[m + 1] 'x.m}
+    In
+    Unfold {m env loop expr}
+        Match expr {
+        | 'true 'true
+        | 'false 'false
+        | 'num.n 'num.(RUNTIME.encode_small_integer n)
+        | 'const.i 'c.i
+        | 'package.i 'p.i
+        | 'var.name
+            Match (VAR_MAP.search env name) {
+            | 'nothing (die "Unexpected scope error.")
+            | 'just.{_ xm} xm
+            }
+        | 'chain.{expr chain}
+            (LIST.reduce chain (Fold m env 'nothing expr)
+                Func {code access}
+                    Match access {
+                    | 'tuple_fetch.i 'tuple_fetch.{code i}
+                    | 'record_fetch.i 'record_fetch.{code i}
+                    })
+        | 'tuple.exprs
+            Match exprs {
+            | 'nil 'empty_tuple
+            | 'cons._
+                'alloc_tuple.(LIST.map exprs [Func expr (Fold m env 'nothing expr)])
+            }
+        | 'record.{layout inits}
+            Let inits
+                (LIST.map inits
+                    Func init (Fold m env 'nothing init))
+            In
+            'alloc_record.{layout inits}
+        | 'block.{binders expr}
+            Let m0 m
+            Let {m env stmts}
+                Let env_outer env
+                In
+                (LIST.fold binders {m env_outer QUEUE.empty}
+                    Func {binder {m env_inner stmts}}
+                        Match binder {
+                        | 'let.{pat expr}
+                            Match pat {
+                            | 'var.name
+                                Cond {
+                                | (STRING.equal name "_")
+                                    {m env_inner
+                                        (QUEUE.push stmts
+                                            'expr.(Fold m env_outer 'nothing expr))}
+                                | True
+                                    Let {m xm} (fresh_var m)
+                                    In
+                                    {m (VAR_MAP.insert env_inner {name xm})
+                                        (QUEUE.push stmts
+                                            'assign.{xm
+                                                (Fold m env_outer 'nothing expr)})}
+                                }
+                            | 'tuple.names
+                                Let {m tuple_var} (fresh_var m)
+                                In
+                                Let stmts
+                                    (QUEUE.push stmts
+                                        'assign.{tuple_var
+                                            (Fold m env_outer 'nothing expr)})
+                                In
+                                Let {_ m env_inner stmts}
+                                    (LIST.reduce names {0 m env_inner stmts}
+                                        Func {{i m env_inner stmts} name}
+                                            Cond {
+                                            | (STRING.equal name "_")
+                                                {[i + 1] m env_inner stmts}
+                                            | True
+                                                Let {m xm} (fresh_var m)
+                                                In
+                                                Let env_inner
+                                                    (VAR_MAP.insert env_inner {name xm})
+                                                Let stmts
+                                                    (QUEUE.push stmts
+                                                        'assign.{xm
+                                                            'tuple_fetch.{tuple_var i}})
+                                                In
+                                                {[i + 1] m env_inner stmts}
+                                            })
+                                In
+                                {m env_inner stmts}
+                            }
+                        })
+            In
+            Cond {
+            | (QUEUE.is_empty stmts)
+                (Fold m env loop expr)
+            | True
+                Let stmts (QUEUE.pop_all stmts)
+                In
+                Let stmts
+                    Cond {
+                    | [m = m0] stmts
+                    | True
+                        Let decls
+                            (LIST.map (LIST.iota [m - m0])
+                                Func i {'x.[m0 + i] 'nothing})
+                        In
+                        ['decls.decls & stmts]
+                    }
+                In
+                'stmt_expr.{stmts (Fold m env loop expr)}
+            }
+        | 'func.{i free param_pats expr}
+            Let {m args inits env}
+                {0 QUEUE.empty QUEUE.empty VAR_MAP.empty}
+            In
+            Let {m args env}
+                Let {m xm} (fresh_var m)
+                In
+                {m (QUEUE.push args xm) env}
+            In
+            Let {m args inits env}
+                (LIST.reduce param_pats {m args inits env}
+                    Func {{m args inits env} pat}
+                        Let {m arg} (fresh_var m)
+                        In
+                        Let args (QUEUE.push args arg)
+                        In
+                        Match pat {
+                        | 'ignore
+                            {m args inits env}
+                        | 'var.name
+                            {m args inits
+                                (VAR_MAP.insert env {name arg})}
+                        | 'tuple.names
+                            Let {_ m inits env}
+                                (LIST.reduce names {0 m inits env}
+                                    Func {{j m inits env} name}
+                                        \ TODO Handle name="_" case better.
+                                        Let {m xm} (fresh_var m)
+                                        In
+                                        Let env
+                                            (VAR_MAP.insert env {name xm})
+                                        Let init
+                                            {xm 'just.'tuple_fetch.{arg j}}
+                                        In
+                                        {[j + 1] m
+                                            (QUEUE.push inits init)
+                                            env})
+                            In
+                            {m args inits env}
+                        })
+            In
+            Let {m maybe_env_access env}
+                Match free {
+                | 'nil {m 'nothing env}
+                | _
+                    Let {_ m pairs env}
+                        (LIST.reduce free {0 m QUEUE.empty env}
+                            Func {{j m pairs env} name}
+                                Let {m xm} (fresh_var m)
+                                In
+                                {[j + 1] m
+                                    (QUEUE.push pairs {xm j})
+                                    (VAR_MAP.insert env {name xm})})
+                    In
+                    {m 'just.'env_access.{'x.0 (QUEUE.pop_all pairs)} env}
+                }
+            In
+            Let expr (Fold m env 'nothing expr)
+            Let stmts
+                Let stmts
+                    Match maybe_env_access {
+                    | 'nothing 'nil
+                    | 'just.stmt [stmt & 'nil]
+                    }
+                In
+                If (QUEUE.is_empty inits)
+                    stmts
+                    ['decls.(QUEUE.pop_all inits) & stmts]
+            In
+            'func.{i (QUEUE.pop_all args) stmts expr}
+        | 'prim_app.{name args}
+            Define (transform arg)
+                (Fold m env 'nothing arg)
+            In
+            'prim_app.{name (LIST.map args transform)}
+        | 'closure_app_known.{i func args}
+            Define (transform expr)
+                (Fold m env 'nothing expr)
+            In
+            'closure_app_known.{i (transform func) (LIST.map args transform)}
+        | 'closure_app.{func args}
+            Define (transform expr)
+                (Fold m env 'nothing expr)
+            In
+            'closure_app.{(transform func) (LIST.map args transform)}
+        | 'closure.{i free num_params}
+            Let free
+                (LIST.map free
+                    Func name
+                        Match (VAR_MAP.search env name) {
+                        | 'nothing (die "Unexpected scope error.")
+                        | 'just.{_ xm} xm
+                        })
+            In
+            'alloc_closure.{i free num_params}
+        | 'iterate.{vars inits expr}
+            Let inits
+                (LIST.map inits
+                    Func init 'just.(Fold m env 'nothing init))
+            Let {vars expr}
+                Let {m vars env}
+                    (LIST.fold vars {m 'nil env}
+                        Func {name {m vars env}}
+                            Let {m var} (fresh_var m)
+                            In
+                            Let env (VAR_MAP.insert env {name var})
+                            In
+                            {m [var & vars] env})
+                In
+                {vars (Fold m env 'just.vars expr)}
+            In
+            'iterate.{(LIST.zip vars inits) expr}
+        | 'continue.exprs
+            Match loop {
+            | 'nothing (die "Unexpected loop scoping error.")
+            | 'just.params
+                Let args exprs
+                Let m0 m
+                In
+                Let {_ evals}
+                    (LIST.reduce args {m QUEUE.empty}
+                        Func {{m evals} arg}
+                            Let {m xm} (fresh_var m)
+                            Let arg_code (Fold m0 env 'nothing arg)
+                            In
+                            {m (QUEUE.push evals {xm 'just.arg_code})})
+                In
+                Let stmts
+                    If (QUEUE.is_empty evals)
+                        QUEUE.empty
+                        (QUEUE.new ['decls.(QUEUE.pop_all evals) & 'nil])
+                In
+                Let {_ stmts}
+                    (LIST.reduce params {m0 stmts}
+                        Func {{m stmts} param}
+                            Let {m xm} (fresh_var m)
+                            In
+                            {m (QUEUE.push stmts 'assign.{param xm})})
+                In
+                'continue.(QUEUE.pop_all stmts)
+            }
+        | 'cond.clauses
+            (LIST.fold clauses 'stuck_cond
+                Func {{test body} expr}
+                    Match test {
+                    | 'true (Fold m env loop body)
+                    | 'false expr
+                    | _
+                        'if.{(Fold m env 'nothing test)
+                            (Fold m env loop body) expr}
+                    })
+        | 'if.{test_expr then_expr else_expr}
+            'if.{(Fold m env 'nothing test_expr)
+                (Fold m env loop then_expr)
+                (Fold m env loop else_expr)}
+        | 'not.expr
+            'if.{(Fold m env 'nothing expr) 'false 'true}
+        | 'and.{test_expr then_expr}
+            'if.{(Fold m env 'nothing test_expr)
+                (Fold m env loop then_expr)
+                'false}
+        | 'or.{test_expr else_expr}
+            'if.{(Fold m env 'nothing test_expr)
+                'true
+                (Fold m env loop else_expr)}
+        | 'labeled.{label expr}
+            Let expr_is_empty_tuple
+                Match expr {
+                | 'tuple.exprs Match exprs { | 'nil True | _ False }
+                | _ False
+                }
+            In
+            If expr_is_empty_tuple
+                'labeled_empty_tuple.label
+                'alloc_labeled_value.{label (Fold m env 'nothing expr)}
+        | 'match.{expr clauses}
+            Let {m expr_var} (fresh_var m)
+            In
+            Let {m pat_var} (fresh_var m)
+            In
+            Let default_clause
+                (LIST.reduce clauses 'default.'stuck
+                    Func {clause {pat body}}
+                        Match pat {
+                        | 'default 'default.'expr.(Fold m env loop body)
+                        | 'labeled._ clause
+                        })
+            Define (labeled_clause label vars body)
+                Match vars {
+                | 'ignore
+                    'labeled.{label (Fold m env loop body)}
+                | 'var.name
+                    Let env (VAR_MAP.insert env {name pat_var})
+                    In
+                    'labeled.{label (Fold m env loop body)}
+                | 'tuple.names
+                    Let n (LIST.length names)
+                    In
+                    Cond {
+                    | [n = 0]
+                        'labeled.{label (Fold m env loop body)}
+                    | True
+                        Let {_ m env inits}
+                            (LIST.fold names {[n - 1] m env 'nil}
+                                Func {name {i m env inits}}
+                                    Cond {
+                                    | (STRING.equal name "_")
+                                        {[i - 1] m env inits}
+                                    | True
+                                        Let {m xm} (fresh_var m)
+                                        In
+                                        Let env (VAR_MAP.insert env {name xm})
+                                        Let init {xm 'just.'tuple_fetch.{pat_var i}}
+                                        In
+                                        {[i - 1] m env [init & inits]}
+                                    })
+                        In
+                        Let expr (Fold m env loop body)
+                        In
+                        Match inits {
+                        | 'nil 'labeled.{label expr}
+                        | 'cons._ 'labeled.{label 'stmt_expr.{['decls.inits & 'nil] expr}}
+                        }
+                    }
+                }
+            In 
+            Let clauses
+                (LIST.reduce clauses [default_clause & 'nil]
+                    Func {clauses {pat body}}
+                        Match pat {
+                        | 'default clauses
+                        | 'labeled.{label vars}
+                            Let clause (labeled_clause label vars body)
+                            In
+                            [clause & clauses]
+                        })
+            In
+            'match.{expr_var pat_var (Fold m env 'nothing expr) clauses}
+        | _ (die "Unexpected expression class.")
+        }
+
+Where
+
+Define (pattern_variables pat)
+    Match pat {
+    | 'tuple.vars vars
+    | 'var.var [var & 'nil]
+    | 'ignore 'nil
+    }
+
+Define (binder_variables binder)
+    Match binder {
+    | 'let.{pat _}
+        Match pat {
+        | 'tuple.vars vars
+        | 'var.var [var & 'nil]
+        }
+    }
+
+Define (binder_expr binder)
+    Match binder {
+    | 'let.{_ expr} expr
+    }
+
+Where
+
+Let die OS.die
+
+Where
+
+Let LIST Package "list"
+Let OS Package "os"
+Let QUEUE Package "queue"
+Let RUNTIME Package "runtime"
+Let SEARCH Package "search"
+Let SORT Package "sort"
+Let STDIO Package "stdio"
+Let STRING Package "string"
+Let Z Package "z"
