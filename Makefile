@@ -1,19 +1,14 @@
 .DEFAULT_GOAL = all
 .PHONY: all clean
 
+programs = 84
+
 OPTIM = 0
 
-ifdef VERBOSE
-Q =
-E = @ :
-else
 Q = @
 E = @ echo
-endif
 
--include programs.make
-
-programs ?= 84
+-include local.make
 
 all: 84_stable $(programs)
 
