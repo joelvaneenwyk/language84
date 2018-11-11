@@ -25,6 +25,7 @@ Define (whitespace text i)
             Cond {
             | [c = ` `] (Continue [i + 1])
             | [c = `\n`] (Continue [i + 1])
+            | [c = `\r`] (Continue [i + 1])
             | [c = `\\`] (Continue (chomp_line [i + 1]))
             | True i
             }
@@ -90,6 +91,7 @@ Define (scan_character text i m)
             | 'start
                 Cond {
                 | [c = `\\`] (Continue [i + 1] 'escaped)
+                | [c = `\r`] (Continue [i + 1] 'escaped)
                 | [c = `\n`] (OS.die "Incomplete character literal.")
                 | True (Continue [i + 1] 'stop.c)
                 }
@@ -98,6 +100,7 @@ Define (scan_character text i m)
                     Cond {
                     | [c = `\\`] `\\`
                     | [c = `n`] `\n`
+                    | [c = `r`] `\r`
                     | [c = `0`] `\0`
                     | True (OS.die "Invalid escape sequence in character literal.")
                     }
