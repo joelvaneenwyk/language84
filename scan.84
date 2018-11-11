@@ -12,6 +12,7 @@ Define (whitespace text i)
         Iterate i
             Cond {
             | [i = m] i
+            | [(STRING.fetch text i) = `\r`] [i + 1]
             | [(STRING.fetch text i) = `\n`] [i + 1]
             | True (Continue [i + 1])
             }

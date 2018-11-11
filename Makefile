@@ -7,6 +7,8 @@ OPTIM = 0
 
 Q = @
 E = @ echo
+CFLAGS = -I. -std=gnu11 -static -fno-stack-protector -Wno-unused-variable -Wno-unused-function -Wno-unused-value -O$(OPTIM)
+LDFLAGS = -nostdlib -Wl,--build-id=none
 
 -include local.make
 
@@ -18,7 +20,7 @@ clean:
 
 support.o: support.c
 	$(E) "CC  $@"
-	$(Q) $(CC) -std=gnu11 -static -fno-stack-protector -O2 -I. -c $< -Wall
+	$(Q) $(CC) $(CFLAGS) -c $< -Wall
 
 $(programs): %: %.c
 
@@ -28,9 +30,9 @@ $(programs:%=%.c): 84_stable
 
 $(programs) 84_stable: support.o
 	$(E) "CC  $@"
-	$(Q) $(CC) -std=gnu11 -static -s -fno-stack-protector -nostdlib -Wl,--build-id=none \
-		-O$(OPTIM) -I. -o $@ $@.c support.o \
-		-Wno-unused-variable -Wno-unused-function -Wno-unused-value
+	$(Q) $(CC) $(CFLAGS) $(LDFLAGS) \
+		-o $@ $@.c support.o \
+		
 
 84_stable: 84_stable.c
 
