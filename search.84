@@ -1,6 +1,6 @@
 {
-: MAP
-: SET
+:MAP
+:SET
 }
 
 Where
@@ -25,14 +25,14 @@ Let SET
                     })
         In
         {
-        : compare
-        : empty MAP.empty
-        : new MAP.new
-        : search MAP.search
-        : insert MAP.insert
-        : list MAP.list
-        : union
-        : diff
+        :compare
+        :empty MAP.empty
+        :new MAP.new
+        :search MAP.search
+        :insert MAP.insert
+        :list MAP.list
+        :union
+        :diff
         }
 
 Where
@@ -45,18 +45,16 @@ Define (make compare item_key)
             | [depth = 1]
                 Match t {
                 | 'one.a
-                    Match (compare key (item_key a)) {
-                    | 'equal 'just.a
-                    | _ 'nothing
-                    }
+                    If Pattern 'equal Matches (compare key (item_key a))
+                        'just.a
+                        'nothing
                 | 'two.{a b}
-                    Match (compare key (item_key a)) {
-                    | 'equal 'just.a
-                    | _
-                        Match (compare key (item_key b)) {
-                        | 'equal 'just.b
-                        | _ 'nothing
-                        }
+                    Cond {
+                    | Pattern 'equal Matches (compare key (item_key a))
+                        'just.a
+                    | Pattern 'equal Matches (compare key (item_key b))
+                        'just.b
+                    | True 'nothing
                     }
                 }
             | True
@@ -83,9 +81,9 @@ Define (make compare item_key)
     In
     Let empty
         {
-        : depth 0
-        : size 0
-        : root 'zero
+        :depth 0
+        :size 0
+        :root 'zero
         }
     Define (insert tree a)
         Define (insert depth tree a)
@@ -173,22 +171,22 @@ Define (make compare item_key)
         In
         If [tree.depth = 0]
             {
-            : depth 1
-            : size 1
-            : root 'one.a
+            :depth 1
+            :size 1
+            :root 'one.a
             }
             Match (insert tree.depth tree.root a) {
             | 'no_split.t
                 {
-                : depth tree.depth
-                : size [tree.size + 1]
-                : root t
+                :depth tree.depth
+                :size [tree.size + 1]
+                :root t
                 }
             | 'split.{u a v}
                 {
-                : depth [tree.depth + 1]
-                : size [tree.size + 1]
-                : root 'one.{u a v}
+                :depth [tree.depth + 1]
+                :size [tree.size + 1]
+                :root 'one.{u a v}
                 }
             }
     Define (list tree)
@@ -222,17 +220,30 @@ Define (make compare item_key)
         (LIST.reduce items empty insert)
     In
     {
-    : compare
-    : item_key
-    : size
-    : new
-    : empty
-    : insert
-    : search
-    : list
+    :compare
+    :item_key
+    :size
+    :new
+    :empty
+    :insert
+    :search
+    :list
     }
+
+Where
+
+Open Z
+    {
+    :Infix >
+    :Infix =
+    :Infix +
+    :Infix -
+    }
+
+Open LIST {:Infix &}
 
 Where
 
 Let STDIO Package "stdio"
 Let LIST Package "list"
+Let Z Package "z"

@@ -1,143 +1,150 @@
 {
-: whitespace
-: token
+:skip_whitespace
+:token
+:validate_bytes
 }
 
 Where
 
-Define (whitespace text i)
+Define (token text i)
+    Cond {
+    | [i = (STRING.length text)] {i 'eof}
+    | True
+        Let c (STRING.fetch text i)
+        In
+        Cond {
+        | [c = `"`] (scan_string text [i + 1])
+        | [c = ```] (scan_character text [i + 1])
+        | (ASCII.is_digit c) (scan_number text i)
+        | (ASCII.is_letter c) (scan_word text i)
+        | (is_op_symbol c) (scan_operator text i)
+        | True (scan_basic_symbol text i)
+        }
+    }
+
+Define (skip_whitespace text i)
     Let m (STRING.length text)
-    In
-    Define (chomp_line i)
-        Iterate i
-            Cond {
-            | [i = m] i
-            | [(STRING.fetch text i) = `\n`] [i + 1]
-            | True (Continue [i + 1])
-            }
     In
     Iterate i
         Cond {
         | [i = m] i
         | True
+            Let i (skip_spaces text i)
+            In
             Let c (STRING.fetch text i)
             In
             Cond {
-            | [c = ` `] (Continue [i + 1])
             | [c = `\n`] (Continue [i + 1])
-            | [c = `\\`] (Continue (chomp_line [i + 1]))
+            | [c = `;`] (Continue (skip_line text [i + 1]))
             | True i
             }
         }
 
-Define (token text i)
+Define (validate_bytes text)
     Let m (STRING.length text)
     In
-    Cond {
-    | [i = m] {i 'eof}
-    | True
-        Let {i scan}
-            Let c (STRING.fetch text i)
-            In
+    If [m = 0]
+        'succeed
+        Iterate i From 0
             Cond {
-            | [c = `"`] {[i + 1] scan_string}
-            | [c = ```] {[i + 1] scan_character}
-            | (ASCII.is_digit c) {i scan_number}
-            | (ASCII.is_letter c) {i scan_word}
-            | (is_op_symbol c) {i scan_operator}
-            | True {i scan_basic_symbol}
-            }
-        In
-        (scan text i m)
-    }
-
-Where
-
-Define (scan_string text i m)
-    Let begin i
-    Let end
-        Iterate {i is_escaped} From {i False}
-            Cond {
-            | [i = m] (OS.die "Unexpected EOF while scanning string literal.")
+            | [i = m]
+                If [(STRING.fetch text [m - 1]) = `\n`]
+                    'succeed
+                    'fail."Source text encoding: no terminating newline character."
             | True
                 Let c (STRING.fetch text i)
                 In
+                If (Or (ASCII.is_visible c) [c = ` `] [c = `\n`])
+                    (Continue [i + 1])
+                    'fail.[
+                        STDIO.sprintf
+                        <- "Source text encoding: forbidden byte (%d)." <- c
+                    ]
+            }
+
+Where
+
+Define (scan_string text i)
+    Let begin i
+    In
+    Iterate {i mode} From {i 'default}
+        Let c (STRING.fetch text i)
+        In
+        If [c = `\n`]
+            {i 'error."Incomplete string literal."}
+            Match mode {
+            | 'default
                 Cond {
-                | is_escaped
-                    If (Or [c = `\\`] [c = `"`] [c = `n`] [c = `0`])
-                        (Continue [i + 1] False)
-                        (OS.die "Invalid escape sequence in string literal.")
+                | [c = `\\`]
+                    (Continue [i + 1] 'escaped)
+                | [c = `"`]
+                    Let end i
+                    In
+                    {[end + 1] 'str.(STRING.clip text [begin - 1] [end + 1])}
                 | True
-                    Cond {
-                    | [c = `"`] i
-                    | [c = `\\`] (Continue [i + 1] True)
-                    | [c = `\n`] (OS.die "Incomplete string literal.")
-                    | True (Continue [i + 1] False)
-                    }
+                    (Continue [i + 1] 'default)
+                }
+            | 'escaped
+                Cond {
+                | (Or [c = `\\`] [c = `"`] [c = `n`] [c = `r`] [c = `t`])
+                    (Continue [i + 1] 'default)
+                | True
+                    {i 'error."Invalid escape sequence in string literal."}
                 }
             }
-    In
-    {[end + 1] 'str.(STRING.clip text [begin - 1] [end + 1])}
 
-Define (scan_character text i m)
-    Iterate {i state} From {i 'start}
-        Cond {
-        | [i = m] (OS.die "Unexpected EOF in character literal.")
-        | True
-            Let c (STRING.fetch text i)
-            In
-            Match state {
+Define (scan_character text i)
+    Let begin i
+    In
+    Iterate {i mode} From {i 'start}
+        Let c (STRING.fetch text i)
+        In
+        If [c = `\n`]
+            {i 'error."Incomplete character literal."}
+            Match mode {
             | 'start
-                Cond {
-                | [c = `\\`] (Continue [i + 1] 'escaped)
-                | [c = `\n`] (OS.die "Incomplete character literal.")
-                | True (Continue [i + 1] 'stop.c)
-                }
+                If [c = `\\`]
+                    (Continue [i + 1] 'escaped)
+                    (Continue [i + 1] 'stop.c)
             | 'escaped
                 Let num
                     Cond {
                     | [c = `\\`] `\\`
                     | [c = `n`] `\n`
-                    | [c = `0`] `\0`
-                    | True (OS.die "Invalid escape sequence in character literal.")
+                    | [c = `r`] `\r`
+                    | [c = `t`] `\t`
+                    | True `?`
                     }
                 In
-                (Continue [i + 1] 'stop.num)
+                If [num = `?`]
+                    {i 'error."Invalid escape sequence in character literal."}
+                    (Continue [i + 1] 'stop.num)
             | 'stop.num
                 If [c = ```]
                     {[i + 1] 'num.num}
-                    (OS.die "Invalid character literal.")
+                    {i 'error."Invalid character literal."}
             }
-        }
 
-Define (scan_number text i m)
+Define (scan_number text i)
     Iterate {i num} From {i 0}
-        Cond {
-        | [i = m] {i 'num.num}
-        | True
-            Let c (STRING.fetch text i)
-            In
-            If (ASCII.is_digit c)
-                (Continue [i + 1] [[num * 10] + [c - `0`]])
-                {i 'num.num}
-        }
+        Let c (STRING.fetch text i)
+        In
+        If (ASCII.is_digit c)
+            (Continue [i + 1] [[num * 10] + [c - `0`]])
+            {i 'num.num}
 
-Define (scan_word text i m)
+Define (scan_word text i)
     Let begin i
     Let {end has_upper has_lower}
         Iterate {i has_upper has_lower} From {i False False}
+            Let c (STRING.fetch text i)
+            In
             Cond {
-            | [i = m] {i has_upper has_lower}
-            | True
-                Let c (STRING.fetch text i)
-                In
-                Cond {
-                | (ASCII.is_upper c) (Continue [i + 1] True has_lower)
-                | (ASCII.is_lower c) (Continue [i + 1] has_upper True)
-                | (ASCII.is_digit c) (Continue [i + 1] has_upper has_lower)
-                | [c = `_`] (Continue [i + 1] has_upper has_lower)
-                | True {i has_upper has_lower}
-                }
+            | (ASCII.is_upper c) (Continue [i + 1] True has_lower)
+            | (ASCII.is_lower c) (Continue [i + 1] has_upper True)
+            | (ASCII.is_digit c) (Continue [i + 1] has_upper has_lower)
+            | [c = `_`] (Continue [i + 1] has_upper has_lower)
+            | True {i has_upper has_lower}
             }
     In
     Let word (STRING.clip text begin end)
@@ -146,29 +153,53 @@ Define (scan_word text i m)
         {end 'sym.word}
         {end 'id.word}
 
-Define (scan_operator text i m)
+Define (scan_operator text i)
     Let begin i
     Let end
         Iterate i From [i + 1]
-            Cond {
-            | [i = m] i
-            | (is_op_symbol (STRING.fetch text i)) (Continue [i + 1])
-            | True i
-            }
+            If (is_op_symbol (STRING.fetch text i))
+                (Continue [i + 1])
+                i
     In
     {end 'op.(STRING.clip text begin end)}
 
-Define (scan_basic_symbol text i m)
+Define (scan_basic_symbol text i)
     {[i + 1] 'sym.(STRING.clip text i [i + 1])}
 
 Where
 
+Define (skip_line text i)
+    Iterate i
+        If [(STRING.fetch text i) = `\n`]
+            [i + 1]
+            (Continue [i + 1])
+
+Define (skip_spaces text i)
+    Iterate i
+        If [(STRING.fetch text i) = ` `]
+            (Continue [i + 1])
+            i
+
 Define (is_op_symbol c)
-    (Or [c = `+`] [c = `-`] [c = `*`] [c = `/`] [c = `%`]
-        [c = `=`] [c = `<`] [c = `>`] [c = `!`] [c = `&`])
+    (Or [c = `+`] [c = `-`] [c = `*`] [c = `/`] [c = `\\`] [c = `%`]
+        [c = `=`] [c = `<`] [c = `>`] [c = `!`] [c = `?`] [c = `^`] [c = `&`])
+
+Where
+
+Open Z
+    {
+    :Infix =
+    :Infix +
+    :Infix -
+    :Infix *
+    }
+
+Open FUNC {:Infix <-}
 
 Where
 
 Let ASCII Package "ascii"
-Let OS Package "os"
+Let FUNC Package "func"
+Let STDIO Package "stdio"
 Let STRING Package "string"
+Let Z Package "z"

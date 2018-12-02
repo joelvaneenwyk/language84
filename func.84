@@ -1,0 +1,13 @@
+{
+:Infix <<
+:Infix >>
+:Infix <-
+:Infix ->
+}
+
+Where
+
+Define ([[g] << f] x) (g (f x))
+Define ([[f] >> g] x) (g (f x))
+Define [[f] <- x] (f x)
+Define [[x] -> f] (f x)

@@ -11,16 +11,14 @@ Define (GRAPH MAP SET)
         In
         Let result_empty {'nil unreachable_depth 'bottom}
         Define (result_is_empty {components depth _})
-            Match components {
-            | 'nil [depth = unreachable_depth]
-            | _ False
-            }
+            (And [Pattern 'nil Matches components] [depth = unreachable_depth])
         Define (result_components {components _ _})
             components
         Define (tree_merge a b)
-            Match a {
-            | 'bottom b
-            | _ Match b { | 'bottom a | _ 'across.{a b} }
+            Cond {
+            | [Pattern 'bottom Matches a] b
+            | [Pattern 'bottom Matches b] a
+            | True 'across.{a b}
             }
         Define (tree_flatten tree)
             Unfold {tree vertices} From {tree 'nil}
@@ -93,8 +91,18 @@ Define (GRAPH MAP SET)
         (LIST.reverse (LIST.map (result_components result) tree_flatten))
     In
     {
-    : strongly_connected_components
+    :strongly_connected_components
     }
+
+Where
+
+Open Z
+    {
+    :Infix <
+    :Infix =
+    }
+
+Open LIST {:Infix &}
 
 Where
 

@@ -1,8 +1,9 @@
 {
-: is_letter
-: is_digit
-: is_upper
-: is_lower
+:is_letter
+:is_digit
+:is_upper
+:is_lower
+:is_visible
 }
 
 Where
@@ -12,6 +13,9 @@ Define (is_letter c)
 
 Where
 
+Define (is_visible c)
+    (And [32 < c] [c < 127])
+
 Define (is_digit c)
     (And [`0` <= c] [c <= `9`])
 
@@ -20,3 +24,15 @@ Define (is_upper c)
 
 Define (is_lower c)
     (And [`a` <= c] [c <= `z`])
+
+Where
+
+Open Z
+    {
+    :Infix <
+    :Infix <=
+    }
+
+Where
+
+Let Z Package "z"

@@ -1,20 +1,6 @@
 Begin {
-    Let {mode root_path}
-        Begin {
-            Let usage "usage: 84 [-x] <program>"
-            Let i 1
-            When [i >= OS.argc] {
-                (OS.die usage)
-            }
-            Let {mode i}
-                If (STRING.equal (OS.argv i) "-x")
-                    {'experimental [i + 1]}
-                    {'stable i}
-            When [i != [OS.argc - 1]] {
-                (OS.die usage)
-            }
-            (Return mode (OS.argv i))
-        }
+    When [OS.argc != 2] { (OS.die "usage: 84 <program>") }
+    Let root_path (OS.argv 1)
     Let packages
         Let QUEUE PACKAGE.QUEUE
         In
@@ -24,11 +10,17 @@ Begin {
             | 'just.{path queue}
                 Let file_name (STRING.append path ".84")
                 Let text (FILE.read_all file_name)
+                Begin Match (SCAN.validate_bytes text) {
+                | 'succeed
+                | 'fail.message
+                    (STDIO.print_line message)
+                    (OS.die "Compilation failed.")
+                }
                 (Return
                     Begin Match (PARSE.file text) {
                     | 'succeed.expr
                         Let imports (PACKAGE.gather_imports expr)
-                        Let package {: path : imports : expr}
+                        Let package {:path :imports :expr}
                         Let queue (QUEUE.push_all queue imports)
                         (Continue queue [package & packages])
                     | 'fail.{message i}
@@ -47,25 +39,14 @@ Begin {
         }
     Let paths (LIST.map packages [Func package package.path])
     Let program
-        Begin {
-            Let exprs (LIST.map packages [Func package package.expr])
-            Let exprs
-                (LIST.map exprs
-                    [COMPILE.elaborate_recursion >> COMPILE.collect_free_variables])
-            Let modules (COMPILE.lift_functions exprs)
-            Let packages
-                (LIST.map (LIST.zip packages modules)
-                    Func {package {init functions}}
-                        {
-                        : path package.path
-                        : imports package.imports
-                        : init
-                        : functions
-                        })
-            Let program (COMPILE.collect_constants packages)
-            Let program (COMPILE.elaborate_patterns program)
-            (Return program)
-        }
+        (Reduce -> (COMPILE.link packages)
+            COMPILE.macroexpand
+            COMPILE.elaborate_operators
+            COMPILE.elaborate_recursion
+            COMPILE.collect_free_variables
+            COMPILE.lift_functions
+            COMPILE.collect_constants
+            COMPILE.elaborate_patterns)
     Begin {
         Define (output file_name emitter)
             (FILE.with_output_file file_name
@@ -86,15 +67,36 @@ Begin {
 
 Where
 
+Open Z
+    {
+    :Infix >=
+    :Infix !=
+    :Infix +
+    :Infix -
+    }
+
+Open LIST {:Infix &}
+
+Open FUNC
+    {
+    :Infix >>
+    :Infix ->
+    }
+
+Where
+
 Let BUFIO Package "bufio"
 Let C Package "c"
 Let COMPILE Package "compile"
 Let FILE Package "file"
+Let FUNC Package "func"
 Let IO Package "io"
 Let LIST Package "list"
 Let OS Package "os"
 Let PACKAGE Package "package"
 Let PARSE Package "parse"
+Let SCAN Package "scan"
 Let STDIO Package "stdio"
 Let STRING Package "string"
 Let SYNTAX_ERROR Package "syntax_error"
+Let Z Package "z"

@@ -1,8 +1,8 @@
 {
-: write
-: write_all
-: write_byte
-: flush
+:write
+:write_all
+:write_byte
+:flush
 }
 
 Where

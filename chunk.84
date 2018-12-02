@@ -1,57 +1,58 @@
 {
-: global
-: new
+:global
+:new_rw
+:new_ro
 
-: size
+:size
 
-: store_bytes
-: fetch_bytes_ro
-: fetch_bytes_rw
+:store_bytes
+:fetch_bytes_ro
+:fetch_bytes_rw
 
-: store_byte store_uint8
-: fetch_byte fetch_uint8
+:store_byte store_uint8
+:fetch_byte fetch_uint8
 
-: store_uint8
-: fetch_uint8
+:store_uint8
+:fetch_uint8
 
-: store_uint16 store_uint16_le
-: fetch_uint16 fetch_uint16_le
+:store_uint16 store_uint16_le
+:fetch_uint16 fetch_uint16_le
 
-: store_uint16_le
-: fetch_uint16_le
+:store_uint16_le
+:fetch_uint16_le
 
-: store_uint32 store_uint32_le
-: fetch_uint32 fetch_uint32_le
+:store_uint32 store_uint32_le
+:fetch_uint32 fetch_uint32_le
 
-: store_uint32_le
-: fetch_uint32_le
+:store_uint32_le
+:fetch_uint32_le
 
-: store_uint64 store_uint64_le
-: fetch_uint64 fetch_uint64_le
+:store_uint64 store_uint64_le
+:fetch_uint64 fetch_uint64_le
 
-: store_uint64_le
-: fetch_uint64_le
+:store_uint64_le
+:fetch_uint64_le
 
-: store_int8
-: fetch_int8
+:store_int8
+:fetch_int8
 
-: store_int16 store_int16_le
-: fetch_int16 fetch_int16_le
+:store_int16 store_int16_le
+:fetch_int16 fetch_int16_le
 
-: store_int16_le
-: fetch_int16_le
+:store_int16_le
+:fetch_int16_le
 
-: store_int32 store_int32_le
-: fetch_int32 fetch_int32_le
+:store_int32 store_int32_le
+:fetch_int32 fetch_int32_le
 
-: store_int32_le
-: fetch_int32_le
+:store_int32_le
+:fetch_int32_le
 
-: store_int64 store_int64_le
-: fetch_int64 fetch_int64_le
+:store_int64 store_int64_le
+:fetch_int64 fetch_int64_le
 
-: store_int64_le
-: fetch_int64_le
+:store_int64_le
+:fetch_int64_le
 }
 
 Where
@@ -59,8 +60,11 @@ Where
 Define (global i)
     (Prim chunk_global i)
 
-Define (new num_bytes)
-    (Prim chunk_new num_bytes)
+Define (new_rw num_bytes)
+    (Prim chunk_new_rw num_bytes)
+
+Define (new_ro num_bytes init_command)
+    (Prim chunk_new_ro num_bytes init_command)
 
 Define (size chunk)
     (Prim chunk_size chunk)

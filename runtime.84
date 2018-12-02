@@ -1,7 +1,7 @@
 {
-: encode_small_integer
-: prim_arity
-: prim_short_name
+:encode_small_integer
+:prim_arity
+:prim_short_name
 }
 
 Where
@@ -34,6 +34,7 @@ Let prim_arities
             {"exec" 4}
             {"exit" 1}
             {"getcwd" 0}
+            {"getpid" 0}
             {"open" 3}
             {"close" 1}
             {"read" 4}
@@ -45,19 +46,14 @@ Let prim_arities
             {"file_open" 1}
             {"file_close" 1}
             {"file_read_all" 1}
-            {"string_length" 1}
-            {"string_fetch" 2}
-            {"string_equal" 2}
-            {"string_compare" 2}
-            {"string_append" 2}
-            {"string_clip" 3}
             {"mmap" 6}
             {"munmap" 1}
             {"epoll_create1" 1}
             {"epoll_ctl" 4}
             {"epoll_wait" 4}
             {"chunk_global" 1}
-            {"chunk_new" 1}
+            {"chunk_new_rw" 1}
+            {"chunk_new_ro" 2}
             {"chunk_size" 1}
             {"chunk_store_bytes" 5}
             {"chunk_fetch_bytes_ro" 3}
@@ -92,7 +88,6 @@ Let prim_arities
             {"print" 1}
             {"print_line" 1}
             {"show_integer" 1}
-            {"compose" 2}
             'nil))
 
 Let prim_short_names
@@ -104,6 +99,7 @@ Let prim_short_names
             {"exec" "s00"}
             {"exit" "s05"}
             {"getcwd" "s85"}
+            {"getpid" "s66"}
             {"open" "s03"}
             {"close" "s72"}
             {"read" "s67"}
@@ -118,7 +114,6 @@ Let prim_short_names
             {"file_close" "s92"}
             {"file_read_all" "s28"}
             {"show_integer" "s12"}
-            {"compose" "s22"}
             {"multiply" "s93"}
             {"add" "s19"}
             {"subtract" "s47"}
@@ -130,19 +125,14 @@ Let prim_short_names
             {"less_or_equal" "s63"}
             {"greater" "s61"}
             {"greater_or_equal" "s55"}
-            {"string_length" "s65"}
-            {"string_fetch" "s69"}
-            {"string_compare" "s37"}
-            {"string_equal" "s45"}
-            {"string_append" "s25"}
-            {"string_clip" "s44"}
             {"mmap" "s95"}
             {"munmap" "s56"}
             {"epoll_create1" "s71"}
             {"epoll_ctl" "s60"}
             {"epoll_wait" "s97"}
             {"chunk_global" "s04"}
-            {"chunk_new" "s38"}
+            {"chunk_new_rw" "s38"}
+            {"chunk_new_ro" "s32"}
             {"chunk_size" "s14"}
             {"chunk_store_bytes" "s82"}
             {"chunk_fetch_bytes_ro" "s11"}
@@ -175,7 +165,13 @@ Let die OS.die
 
 Where
 
+Open Z {:Infix *}
+Open LIST {:Infix &}
+
+Where
+
 Let LIST Package "list"
 Let OS Package "os"
 Let SEARCH Package "search"
 Let STRING Package "string"
+Let Z Package "z"

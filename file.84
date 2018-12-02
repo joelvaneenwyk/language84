@@ -1,6 +1,6 @@
 {
-: read_all
-: with_output_file
+:read_all
+:with_output_file
 }
 
 Where

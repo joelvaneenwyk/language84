@@ -1,31 +1,580 @@
 {
-: elaborate_recursion
-: collect_free_variables
-: lift_functions
-: collect_constants
-: elaborate_patterns
+:link
+:macroexpand
+:elaborate_operators
+:elaborate_recursion
+:collect_free_variables
+:lift_functions
+:collect_constants
+:elaborate_patterns
 }
 
 Where
 
-Define (lift_functions exprs)
-    Let {_ modules}
-        (LIST.fold exprs {1 'nil}
-            Func {expr {i modules}}
-                Let {init i functions} (lift_functions i expr)
-                In
-                {i [{init functions} & modules]})
+Define (link packages)
+    Let MAP (SEARCH.MAP STRING.compare [Func {path _} path])
     In
-    modules
+    Define ((compile env) expr)
+        Match expr {
+        | 'true (pure expr)
+        | 'false (pure expr)
+        | 'num._ (pure expr)
+        | 'str._ (pure expr)
+        | 'package.path
+            Match (MAP.search env path) {
+            | 'just.{_ var} (pure 'var.var)
+            }
+        | 'prim._ (pure expr)
+        | 'var._ (pure expr)
+        | 'chain.{expr chain}
+            (lift1 (eval expr)
+                Func expr 'chain.{expr chain})
+        | 'tuple.exprs
+            (lift1 (map exprs eval)
+                Func exprs 'tuple.exprs)
+        | 'record.{labels inits}
+            (lift1 (map inits eval)
+                Func inits 'record.{labels inits})
+        | 'block.{binders expr}
+            (lift2
+                (map binders
+                    Func binder
+                        Match binder {
+                        | 'let.{pat expr}
+                            (lift1 (eval expr)
+                                Func expr 'let.{pat expr})
+                        | 'open.{expr pairs}
+                            (lift1 (eval expr)
+                                Func expr 'open.{expr pairs})
+                        })
+                (eval expr)
+                Func {binders expr} 'block.{binders expr})
+        | 'app.{func args}
+            (lift2 (eval func) (map args eval)
+                Func {func args} 'app.{func args})
+        | 'app_infix.{op left rights}
+            (lift2 (eval left) (map rights eval)
+                Func {left rights}
+                    'app_infix.{op left rights})
+        | 'func.{param_pats expr}
+            (lift1 (eval expr)
+                Func expr 'func.{param_pats expr})
+        | 'iterate.{vars inits expr}
+            (lift2 (map inits eval) (eval expr)
+                Func {inits expr} 'iterate.{vars inits expr})
+        | 'continue.exprs
+            (lift1 (map exprs eval)
+                Func exprs 'continue.exprs)
+        | 'unfold.{vars inits expr}
+            (lift2 (map inits eval) (eval expr)
+                Func {inits expr} 'unfold.{vars inits expr})
+        | 'fold.exprs
+            (lift1 (map exprs eval)
+                Func exprs 'fold.exprs)
+        | 'cond.clauses
+            Define (eval_clause {test body})
+                (lift2 (eval test) (eval body)
+                    Func clause clause)
+            In
+            (lift1 (map clauses eval_clause)
+                Func clauses 'cond.clauses)
+        | 'if.{test then else}
+            (lift3 (eval test) (eval then) (eval else)
+                Func {test then else} 'if.{test then else})
+        | 'and.{test then}
+            (lift2 (eval test) (eval then)
+                Func {test then} 'and.{test then})
+        | 'or.{test else}
+            (lift2 (eval test) (eval else)
+                Func {test else} 'or.{test else})
+        | 'pattern_matches.{pat match_expr}
+            (lift1 (eval match_expr)
+                Func match_expr 'pattern_matches.{pat match_expr})
+        | 'labeled.{label expr}
+            (lift1 (eval expr)
+                Func expr 'labeled.{label expr})
+        | 'match.{expr clauses}
+            Define (eval_clause {pat body})
+                (lift1 (eval body)
+                    Func body {pat body})
+            In
+            (lift2 (eval expr) (map clauses eval_clause)
+                Func {expr clauses} 'match.{expr clauses})
+        }
+    In
+    Define (link expr env)
+        Let compile (compile env)
+        In
+        Unfold c From (compile expr)
+            Match c {
+            | 'pure.expr expr
+            | 'lift1.{c1 f} (f (Fold c1))
+            | 'lift2.{c1 c2 f} (f (Fold c1) (Fold c2))
+            | 'lift3.{c1 c2 c3 f} (f (Fold c1) (Fold c2) (Fold c3))
+            | 'eval.expr (Fold (compile expr))
+            }
+    In
+    Match packages {
+    | 'cons.{package packages}
+        Unfold {i package packages env} From {1 package packages MAP.empty}
+            Let path package.path
+            Let expr (link package.expr env)
+            In
+            Match packages {
+            | 'nil expr
+            | 'cons.{package packages}
+                Let var (STRING.append "Package" (Z.show i))
+                In
+                Let env (MAP.insert env {path var})
+                In
+                'block.{
+                    ['let.{'var.var expr} & 'nil]
+                    (Fold [i + 1] package packages env)
+                }
+            }
+    }
 
-Where
+Define (macroexpand expr)
+    Define (compile expr)
+        Match expr {
+        | 'true (pure expr)
+        | 'false (pure expr)
+        | 'num._ (pure expr)
+        | 'str._ (pure expr)
+        | 'prim._ (pure expr)
+        | 'var._ (pure expr)
+        | 'chain.{expr chain}
+            (lift1 (eval expr)
+                Func expr 'chain.{expr chain})
+        | 'tuple.exprs
+            (lift1 (map exprs eval)
+                Func exprs 'tuple.exprs)
+        | 'record.{labels inits}
+            (lift1 (map inits eval)
+                Func inits 'record.{labels inits})
+        | 'block.{binders expr}
+            Define (compile_binder binder)
+                Match binder {
+                | 'let.{pat body}
+                    (lift1 (eval body)
+                        Func body 'let.{pat body})
+                | 'open._ (pure binder)
+                }
+            In
+            (lift2 (map binders compile_binder) (eval expr)
+                Func {binders expr} 'block.{binders expr})
+        | 'app.{func args}
+            (lift2 (eval func) (map args eval)
+                Func {func args} 'app.{func args})
+        | 'app_infix.{op left rights}
+            (lift2 (eval left) (map rights eval)
+                Func {left rights}
+                    'app_infix.{op left rights})
+        | 'func.{param_pats expr}
+            (lift1 (eval expr)
+                Func expr 'func.{param_pats expr})
+        | 'iterate.{vars inits expr}
+            (lift2 (map inits eval) (eval expr)
+                Func {inits expr} 'iterate.{vars inits expr})
+        | 'continue.exprs
+            (lift1 (map exprs eval)
+                Func exprs 'continue.exprs)
+        | 'unfold.{vars inits expr}
+            (lift2 (map inits eval) (eval expr)
+                Func {inits expr} 'unfold.{vars inits expr})
+        | 'fold.exprs
+            (lift1 (map exprs eval)
+                Func exprs 'fold.exprs)
+        | 'cond.clauses
+            Match clauses {
+            | 'nil (pure expr)
+            | 'cons.{clause clauses}
+                Unfold {clause clauses}
+                    Let {test body} clause
+                    In
+                    Match clauses {
+                    | 'nil
+                        If Pattern 'pattern_matches.{pat match_expr} Matches test
+                            (lift2 (eval match_expr) (eval body)
+                                Func {match_expr body}
+                                    'match.{match_expr [{pat body} & 'nil]})
+                            (lift2 (eval test) (eval body)
+                                Func {test body}
+                                    'cond.[{test body} & 'nil])
+                    | 'cons.{clause clauses}
+                        If Pattern 'pattern_matches.{pat match_expr} Matches test
+                            (lift3 (eval match_expr) (eval body) (Fold clause clauses)
+                                Func {match_expr then else}
+                                    Let match_clauses
+                                        (Reduce & {pat then} {'default else} 'nil)
+                                    In
+                                    'match.{match_expr match_clauses})
+                            (lift3 (eval test) (eval body) (Fold clause clauses)
+                                Func {test body more}
+                                    Match more {
+                                    | 'cond.clauses
+                                        'cond.[{test body} & clauses]
+                                    | 'match._
+                                        'cond.[{test body} & {'true more} & 'nil]
+                                    })
+                    }
+            }
+        | 'if.{test then else}
+            If Pattern 'pattern_matches.{pat match_expr} Matches test
+                (lift3 (eval match_expr) (eval then) (eval else)
+                    Func {match_expr then else}
+                        Let match_clauses
+                            (Reduce & {pat then} {'default else} 'nil)
+                        In
+                        'match.{match_expr match_clauses})
+                (lift3 (eval test) (eval then) (eval else)
+                    Func {test then else} 'if.{test then else})
+        | 'and.{test then}
+            (eval 'if.{test then 'false})
+        | 'or.{test else}
+            (lift2 (eval test) (eval else)
+                Func {test else} 'if.{test 'true else})
+        | 'pattern_matches.{pat match_expr}
+            (lift1 (eval match_expr)
+                Func match_expr
+                    'match.{match_expr [{pat 'true} & {'default 'false} & 'nil]})
+        | 'labeled.{label expr}
+            (lift1 (eval expr)
+                Func expr 'labeled.{label expr})
+        | 'match.{expr clauses}
+            Define (compile_clause {pat body})
+                (lift1 (eval body)
+                    Func body {pat body})
+            In
+            (lift2 (eval expr) (map clauses compile_clause)
+                Func {expr clauses} 'match.{expr clauses})
+        }
+    In
+    Unfold c From (compile expr)
+        Match c {
+        | 'pure.x x
+        | 'lift1.{c1 f} (f (Fold c1))
+        | 'lift2.{c1 c2 f} (f (Fold c1) (Fold c2))
+        | 'lift3.{c1 c2 c3 f} (f (Fold c1) (Fold c2) (Fold c3))
+        | 'eval.expr (Fold (compile expr))
+        }
+
+Define (elaborate_operators expr)
+    Let reduce_infix
+        Define (app left var right)
+            'app.{var [left & right & 'nil]}
+        In
+        Define (reduce_left var left rights)
+            (LIST.reduce rights left
+                Func {left right} (app left var right))
+        Define (reduce_right var left rights)
+            Match (LIST.reverse [left & rights]) {
+            | 'cons.{right lefts}
+                (LIST.reduce lefts right
+                    Func {right left} (app left var right))
+            }
+        Define (reduce_not var left rights)
+            Match rights {
+            | 'cons.{right rights}
+                Match rights {
+                | 'nil (app left var right)
+                | 'cons._ (die "No associativity rule for operator.")
+                }
+            }
+        In
+        Func {var assoc left rights}
+            Let reduce
+                Match assoc {
+                | 'left reduce_left
+                | 'right reduce_right
+                | 'not reduce_not
+                }
+            In
+            (reduce var left rights)
+    In
+    Define (adjust pat)
+        Match pat {
+        | 'infix_op.{op _} 'var.(STRING.append "Infix_" op)
+        | 'prefix_op.op 'var.(STRING.append "Prefix_" op)
+        | _ pat
+        }
+    Define (match pat static)
+        Match pat {
+        | 'var.var [{var static} & 'nil]
+        | 'tuple.vars
+            Let statics
+                If Pattern 'tuple.statics Matches static
+                    If [(LIST.length vars) = (LIST.length statics)]
+                        statics
+                        (LIST.map vars [Func _ 'expr])
+                    (LIST.map vars [Func _ 'expr])
+            In
+            (LIST.filter (LIST.zip vars statics)
+                Func {var _} !(STRING.equal var "_"))
+        | 'infix_op.{op assoc}
+            Let var (STRING.append "Infix_" op)
+            In
+            [{var 'infix_op.{assoc static}} & 'nil]
+        | 'prefix_op.op
+            Let var (STRING.append "Prefix_" op)
+            In
+            [{var 'prefix_op.static} & 'nil]
+        | 'open.pairs
+            Match static {
+            | 'record.{labels statics}
+                Let OPEN_MAP (SEARCH.MAP STRING.compare [Func {label _} label])
+                In
+                Let static_env (OPEN_MAP.new (LIST.zip labels statics))
+                In
+                (LIST.reduce pairs 'nil
+                    Func {matches {label_name var_name}}
+                        Match (OPEN_MAP.search static_env label_name) {
+                        | 'nothing
+                            Let strings
+                                (Reduce &
+                                    "Cannot resolve binding for "
+                                    var_name
+                                    "."
+                                    'nil)
+                            In
+                            (die (STRING.concat strings))
+                        | 'just.{_ static}
+                            [{var_name static} & matches]
+                        })
+            | _ (die "Cannot resolve Open binder.")
+            }
+        }
+    Define (choose_nonstatic {expr _}) expr
+    Define ((evaluator env) expr) (eval expr env)
+    Let MAP (SEARCH.MAP STRING.compare [Func {var _} var])
+    In
+    Define (compile expr env)
+        Match expr {
+        | 'true (pure {expr 'expr})
+        | 'false (pure {expr 'expr})
+        | 'num._ (pure {expr 'expr})
+        | 'str._ (pure {expr 'expr})
+        | 'prim._ (pure {expr 'expr})
+        | 'var.name
+            Match (MAP.search env name) {
+            | 'nothing
+                Let {description name}
+                    Let n (STRING.length "Prefix_")
+                    Let name_len (STRING.length name)
+                    In
+                    Let is_prefix_op
+                        (And [name_len > n]
+                            (STRING.equal (STRING.clip name 0 n) "Prefix_"))
+                    In
+                    If is_prefix_op
+                        {"prefix operator" (STRING.clip name n name_len)}
+                        {"variable" name}
+                In
+                (die (Reduce <- STDIO.sprintf "Unbound %s: %s." description name))
+            | 'just.{_ static}
+                (pure {expr static})
+            }
+        | 'chain.{expr chain}
+            (lift1 (eval expr env)
+                Func {expr _}
+                    {'chain.{expr chain} 'expr})
+        | 'tuple.exprs
+            (lift1 (map exprs (evaluator env))
+                Func exprs
+                    Let {exprs statics} (LIST.unzip exprs)
+                    In
+                    {'tuple.exprs 'tuple.statics})
+        | 'record.{labels inits}
+            (lift1 (map inits (evaluator env))
+                Func inits
+                    Let {inits statics} (LIST.unzip inits)
+                    In
+                    {'record.{labels inits} 'record.{labels statics}})
+        | 'block.{binders expr}
+            (bind1
+                (map binders
+                    Func binder
+                        Match binder {
+                        | 'let.{pat expr}
+                            (lift1 (eval expr env)
+                                Func expr 'let.{pat expr})
+                        | 'open.{expr pairs}
+                            (lift1 (eval expr env)
+                                Func expr 'open.{expr pairs})
+                        })
+                Func binders
+                    Let env
+                        (LIST.reduce binders env
+                            Func {env binder}
+                                Let {pat expr}
+                                    Match binder {
+                                    | 'let.{pat expr} {pat expr}
+                                    | 'open.{expr pairs} {'open.pairs expr}
+                                    }
+                                In
+                                Let {_ static} expr
+                                In
+                                (LIST.reduce (match pat static) env MAP.insert))
+                    Let binders
+                        (LIST.fold binders 'nil
+                            Func {binder binders}
+                                Match binder {
+                                | 'let.{pat expr}
+                                    Let {expr _} expr
+                                    In
+                                    ['let.{(adjust pat) expr} & binders]
+                                | 'open.{expr pairs}
+                                    Let {expr _} expr
+                                    In
+                                    (LIST.fold pairs binders
+                                        Func {{label_name var_name} binders}
+                                            Let expr
+                                                'chain.{expr ['id.label_name & 'nil]}
+                                            In
+                                            ['let.{'var.var_name expr} & binders])
+                                })
+                    In
+                    (lift1 (eval expr env)
+                        Func {expr static}
+                            {'block.{binders expr} static}))
+        | 'app.{func args}
+            (lift2 (eval func env) (map args (evaluator env))
+                Func {func args}
+                    Let {func _} func
+                    Let args (LIST.map args choose_nonstatic)
+                    In
+                    {'app.{func args} 'expr})
+        | 'app_infix.{op left rights}
+            Match (MAP.search env (STRING.append "Infix_" op)) {
+            | 'nothing
+                (die (STRING.concat ["Unbound operator: " & op & "." & 'nil]))
+            | 'just.{_ static}
+                Match static {
+                | 'infix_op.{assoc static}
+                    (lift2 (eval left env)
+                        (map rights (evaluator env))
+                        Func {left rights}
+                            Let {left _} left
+                            Let rights (LIST.map rights choose_nonstatic)
+                            Let var 'var.(STRING.append "Infix_" op)
+                            In
+                            {(reduce_infix var assoc left rights) 'expr})
+                }
+            }
+        | 'func.{param_pats expr}
+            Let vars (LIST.concat_map param_pats pattern_variables)
+            In
+            Let env
+                (LIST.reduce vars env
+                    Func {env var}
+                        (MAP.insert env {var 'expr}))
+            In
+            (lift1 (eval expr env)
+                Func {expr _}
+                    {'func.{param_pats expr} 'expr})
+        | 'iterate.{vars inits expr}
+            (bind1 (map inits (evaluator env))
+                Func inits
+                    Let {inits statics} (LIST.unzip inits)
+                    In
+                    Let env
+                        (LIST.reduce
+                            (LIST.filter (LIST.zip vars statics)
+                                Func {var _} !(STRING.equal var "_"))
+                            env
+                            MAP.insert)
+                    In
+                    (lift1 (eval expr env)
+                        Func {expr _}
+                            {'iterate.{vars inits expr} 'expr}))
+        | 'continue.exprs
+            (lift1 (map exprs (evaluator env))
+                Func exprs
+                    Let exprs (LIST.map exprs choose_nonstatic)
+                    In
+                    {'continue.exprs 'expr})
+        | 'unfold.{vars inits expr}
+            (bind1 (map inits (evaluator env))
+                Func inits
+                    Let {inits statics} (LIST.unzip inits)
+                    In
+                    Let env
+                        (LIST.reduce
+                            (LIST.filter (LIST.zip vars statics)
+                                Func {var _} !(STRING.equal var "_"))
+                            env
+                            MAP.insert)
+                    In
+                    (lift1 (eval expr env)
+                        Func {expr _}
+                            {'unfold.{vars inits expr} 'expr}))
+        | 'fold.exprs
+            (lift1 (map exprs (evaluator env))
+                Func exprs
+                    Let exprs (LIST.map exprs choose_nonstatic)
+                    In
+                    {'fold.exprs 'expr})
+        | 'cond.clauses
+            Define (compile_clause {test body})
+                (lift2 (eval test env) (eval body env)
+                    Func clause clause)
+            In
+            (lift1 (map clauses compile_clause)
+                Func clauses
+                    Let clauses
+                        (LIST.map clauses
+                            Func {{test _} {body _}} {test body})
+                    In
+                    {'cond.clauses 'expr})
+        | 'if.{test then else}
+            (lift3 (eval test env) (eval then env) (eval else env)
+                Func {test then else}
+                    Let {test _} test
+                    Let {then _} then
+                    Let {else _} else
+                    In
+                    {'if.{test then else} 'expr})
+        | 'labeled.{label expr}
+            (lift1 (eval expr env)
+                Func {expr _} {'labeled.{label expr} 'expr})
+        | 'match.{expr clauses}
+            Define (compile_clause {pat body})
+                Let vars
+                    Match pat {
+                    | 'default 'nil
+                    | 'labeled.{_ pat} (pattern_variables pat)
+                    }
+                In
+                Let env
+                    (LIST.reduce vars env
+                        Func {env var} (MAP.insert env {var 'expr}))
+                In
+                (lift1 (eval body env)
+                    Func body {pat body})
+            In
+            (lift2 (eval expr env) (map clauses compile_clause)
+                Func {{expr _} clauses}
+                    Let clauses
+                        (LIST.map clauses
+                            Func {pat {body _}} {pat body})
+                    In
+                    {'match.{expr clauses} 'expr})
+        }
+    In
+    Let {expr _}
+        Unfold c From (compile expr MAP.empty)
+            Match c {
+            | 'pure.x x
+            | 'lift1.{c1 f} (f (Fold c1))
+            | 'lift2.{c1 c2 f} (f (Fold c1) (Fold c2))
+            | 'lift3.{c1 c2 c3 f} (f (Fold c1) (Fold c2) (Fold c3))
+            | 'bind1.{c1 f} (Fold (f (Fold c1)))
+            | 'eval.{expr env} (Fold (compile expr env))
+            }
+    In
+    expr
 
 Define (elaborate_recursion expr)
-    Define (pure x) 'pure.x
-    Define (lift1 c1 f) 'lift1.{c1 f}
-    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
-    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
-    Define (sequence cs) 'sequence.cs
     Define (push_loop expr) 'push_loop.expr
     Define (use expr) 'use.expr
     Define (pass expr) 'pass.expr
@@ -36,17 +585,16 @@ Define (elaborate_recursion expr)
         | 'false (pure expr)
         | 'num._ (pure expr)
         | 'str._ (pure expr)
-        | 'package._ (pure expr)
         | 'prim._ (pure expr)
         | 'var._ (pure expr)
         | 'chain.{expr chain}
             (lift1 (use expr)
                 Func expr 'chain.{expr chain})
         | 'tuple.exprs
-            (lift1 (sequence (LIST.map exprs use))
+            (lift1 (map exprs use)
                 Func exprs 'tuple.exprs)
         | 'record.{labels inits}
-            (lift1 (sequence (LIST.map inits use))
+            (lift1 (map inits use)
                 Func inits 'record.{labels inits})
         | 'block.{binders expr}
             Define (compile_binder binder)
@@ -56,26 +604,26 @@ Define (elaborate_recursion expr)
                         Func body 'let.{pat body})
                 }
             In
-            (lift2 (sequence (LIST.map binders compile_binder)) (pass expr)
+            (lift2 (map binders compile_binder) (pass expr)
                 Func {binders expr} 'block.{binders expr})
         | 'app.{func args}
-            (lift2 (use func) (sequence (LIST.map args use))
+            (lift2 (use func) (map args use)
                 Func {func args} 'app.{func args})
         | 'func.{param_pats expr}
             (lift1 (use expr)
                 Func expr 'func.{param_pats expr})
         | 'iterate.{vars inits expr}
-            (lift2 (sequence (LIST.map inits use)) (push_loop expr)
+            (lift2 (map inits use) (push_loop expr)
                 Func {inits expr} 'iterate.{vars inits expr})
         | 'continue.exprs
-            (lift1 (sequence (LIST.map exprs use))
+            (lift1 (map exprs use)
                 Func exprs 'continue.exprs)
         | 'unfold.{vars inits expr}
             Let tagged_vars (LIST.map vars [Func name 'var.name])
             In
             (pass
                 'block.{
-                    [
+                    (Reduce &
                         'let.{
                             'var."Fold"
                             'func.{
@@ -83,8 +631,7 @@ Define (elaborate_recursion expr)
                                 'iterate.{vars tagged_vars expr}
                             }
                         }
-                        & 'nil
-                    ]
+                        'nil)
                     'app.{'var."Fold" ['var."Fold" & inits]}
                 })
         | 'fold.exprs
@@ -94,20 +641,11 @@ Define (elaborate_recursion expr)
                 (lift2 (use test) (pass body)
                     Func clause clause)
             In
-            (lift1 (sequence (LIST.map clauses compile_clause))
+            (lift1 (map clauses compile_clause)
                 Func clauses 'cond.clauses)
         | 'if.{test then else}
             (lift3 (use test) (pass then) (pass else)
                 Func {test then else} 'if.{test then else})
-        | 'not.expr
-            (lift1 (use expr)
-                Func expr 'not.expr)
-        | 'and.{test then}
-            (lift2 (use test) (pass then)
-                Func {test then} 'and.{test then})
-        | 'or.{test else}
-            (lift2 (use test) (pass else)
-                Func {test else} 'or.{test else})
         | 'labeled.{label expr}
             (lift1 (use expr)
                 Func expr 'labeled.{label expr})
@@ -116,7 +654,7 @@ Define (elaborate_recursion expr)
                 (lift1 (pass body)
                     Func body {pat body})
             In
-            (lift2 (use expr) (sequence (LIST.map clauses compile_clause))
+            (lift2 (use expr) (map clauses compile_clause)
                 Func {expr clauses} 'match.{expr clauses})
         }
     In
@@ -127,22 +665,15 @@ Define (elaborate_recursion expr)
         | 'lift2.{c1 c2 f} (f (Fold c1 context) (Fold c2 context))
         | 'lift3.{c1 c2 c3 f}
             (f (Fold c1 context) (Fold c2 context) (Fold c3 context))
-        | 'sequence.cs
-            Match cs {
-            | 'nil 'nil
-            | 'cons.{c cs}
-                'cons.{(Fold c context) (Fold 'sequence.cs context)}
-            }
         | 'push_loop.expr (Fold 'pass.expr 'loop)
         | 'use.expr (Fold (compile expr) 'other)
         | 'pass.expr
             Let expr
                 Match context {
                 | 'loop
-                    Match expr {
-                    | 'fold.exprs 'continue.exprs
-                    | _ expr
-                    }
+                    If Pattern 'fold.exprs Matches expr
+                        'continue.exprs
+                        expr
                 | 'other expr
                 }
             In
@@ -150,18 +681,9 @@ Define (elaborate_recursion expr)
         }
 
 Define (collect_free_variables expr)
-    Define (pure x) 'pure.x
-    Define (lift1 c1 f) 'lift1.{c1 f}
-    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
-    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
     Define (collect name) 'collect.name
     Define (in_context vars c) 'in_context.{vars c}
-    Define (eval expr) 'eval.expr
     Define (eval_func vars expr) 'eval_func.{vars expr}
-    In
-    Define (sequence cs)
-        (LIST.fold cs (pure 'nil)
-            Func {c1 c2} (lift2 c1 c2 LIST.cons))
     In
     Define (compile expr)
         Match expr {
@@ -169,23 +691,22 @@ Define (collect_free_variables expr)
         | 'false (pure expr)
         | 'num._ (pure expr)
         | 'str._ (pure expr)
-        | 'package._ (pure expr)
         | 'prim._ (pure expr)
         | 'var.name (lift1 (collect name) [Func _ expr])
         | 'chain.{expr chain}
             (lift1 (eval expr)
                 Func expr 'chain.{expr chain})
         | 'tuple.exprs
-            (lift1 (sequence (LIST.map exprs eval))
+            (lift1 (map exprs eval)
                 Func exprs 'tuple.exprs)
         | 'record.{labels inits}
-            (lift1 (sequence (LIST.map inits eval))
+            (lift1 (map inits eval)
                 Func inits 'record.{labels inits})
         | 'block.{binders expr}
             Let vars (LIST.concat_map binders binder_variables)
             Let binder_exprs (LIST.map binders binder_expr)
             In
-            (lift2 (sequence (LIST.map binder_exprs eval))
+            (lift2 (map binder_exprs eval)
                 (in_context vars (eval expr))
                 Func {binder_exprs expr}
                     Let binders
@@ -197,7 +718,7 @@ Define (collect_free_variables expr)
                     In
                     'block.{binders expr})
         | 'app.{func args}
-            (lift2 (eval func) (sequence (LIST.map args eval))
+            (lift2 (eval func) (map args eval)
                 Func {func args} 'app.{func args})
         | 'func.{param_pats expr}
             Let vars (LIST.concat_map param_pats pattern_variables)
@@ -206,30 +727,21 @@ Define (collect_free_variables expr)
                 Func {func_free_list expr}
                     'func.{func_free_list param_pats expr})
         | 'iterate.{vars inits expr}
-            (lift2 (sequence (LIST.map inits eval)) (in_context vars (eval expr))
+            (lift2 (map inits eval) (in_context vars (eval expr))
                 Func {inits expr} 'iterate.{vars inits expr})
         | 'continue.exprs
-            (lift1 (sequence (LIST.map exprs eval))
+            (lift1 (map exprs eval)
                 Func exprs 'continue.exprs)
         | 'cond.clauses
             Define (compile_clause {test body})
                 (lift2 (eval test) (eval body)
                     Func clause clause)
             In
-            (lift1 (sequence (LIST.map clauses compile_clause))
+            (lift1 (map clauses compile_clause)
                 Func clauses 'cond.clauses)
         | 'if.{test then else}
             (lift3 (eval test) (eval then) (eval else)
                 Func {test then else} 'if.{test then else})
-        | 'not.expr
-            (lift1 (eval expr)
-                Func expr 'not.expr)
-        | 'and.{test then}
-            (lift2 (eval test) (eval then)
-                Func {test then} 'and.{test then})
-        | 'or.{test else}
-            (lift2 (eval test) (eval else)
-                Func {test else} 'or.{test else})
         | 'labeled.{label expr}
             (lift1 (eval expr)
                 Func expr 'labeled.{label expr})
@@ -244,7 +756,7 @@ Define (collect_free_variables expr)
                 (lift1 (in_context vars (eval body))
                     Func body {pat body})
             In
-            (lift2 (eval expr) (sequence (LIST.map clauses compile_clause))
+            (lift2 (eval expr) (map clauses compile_clause)
                 Func {expr clauses} 'match.{expr clauses})
         }
     In
@@ -256,7 +768,7 @@ Define (collect_free_variables expr)
     In
     Define (insert_each env depth vars)
         (LIST.reduce vars env
-            Func {env var} (MAP.insert env {: name var : depth}))
+            Func {env var} (MAP.insert env {:name var :depth}))
     Define (maybe_insert env depth free name)
         Match (MAP.search env name) {
         | 'just.var
@@ -316,20 +828,10 @@ Define (collect_free_variables expr)
     In
     expr
 
-Define (lift_functions i expr)
-    Define (pure x) 'pure.x
-    Define (lift1 c1 f) 'lift1.{c1 f}
-    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
-    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
-    Define (bind1 c1 f) 'bind1.{c1 f}
+Define (lift_functions expr)
     Define (lookup var) 'lookup.var
     Define (in_context bindings c) 'in_context.{bindings c}
     Define (insert_func f) 'insert_func.f
-    Define (eval expr) 'eval.expr
-    In
-    Define (sequence cs)
-        (LIST.fold cs (pure 'nil)
-            Func {c1 c2} (lift2 c1 c2 LIST.cons))
     In
     Define (compile expr)
         Match expr {
@@ -337,22 +839,21 @@ Define (lift_functions i expr)
         | 'false (pure expr)
         | 'num._ (pure expr)
         | 'str._ (pure expr)
-        | 'package._ (pure expr)
         | 'prim._ (pure expr)
         | 'var._ (pure expr)
         | 'chain.{expr chain}
             (lift1 (eval expr)
                 Func expr 'chain.{expr chain})
         | 'tuple.exprs
-            (lift1 (sequence (LIST.map exprs eval))
+            (lift1 (map exprs eval)
                 Func exprs 'tuple.exprs)
         | 'record.{labels inits}
-            (lift1 (sequence (LIST.map inits eval))
+            (lift1 (map inits eval)
                 Func inits 'record.{labels inits})
         | 'block.{binders expr}
             Let binder_exprs (LIST.map binders binder_expr)
             In
-            (bind1 (sequence (LIST.map binder_exprs eval))
+            (bind1 (map binder_exprs eval)
                 Func binder_exprs
                     Let binders
                         (LIST.map (LIST.zip binders binder_exprs)
@@ -369,11 +870,9 @@ Define (lift_functions i expr)
                                     Match pat {
                                     | 'ignore 'nil
                                     | 'var.var
-                                        Match expr {
-                                        | 'closure.{i _ num_params}
+                                        If Pattern 'closure.{i _ num_params} Matches expr
                                             [{var 'func.{i num_params}} & 'nil]
-                                        | _ [{var 'expr} & 'nil]
-                                        }
+                                            [{var 'expr} & 'nil]
                                     | 'tuple.vars
                                         (LIST.map vars
                                             Func var {var 'expr})
@@ -387,31 +886,29 @@ Define (lift_functions i expr)
             | 'var.var
                 (bind1 (lookup var)
                     Func expr
-                        Match expr {
+                        Begin Match expr {
                         | 'func.{i num_params}
                             Let num_args (LIST.length args)
-                            In
-                            Let {}
-                                Let is_compatible
-                                    (Or [num_params = num_args]
-                                        [num_params = 1]
-                                        [num_args = 1])
-                                In
-                                When !is_compatible {
-                                    (die "Protocol mismatch in function application.")
-                                }
-                            In
-                            (lift2 (eval func) (sequence (LIST.map args eval))
-                                Func {func args}
-                                    If [num_params = num_args]
-                                        'app_known.{i func args}
-                                        'app.{func args})
+                            Let is_compatible
+                                (Or [num_params = num_args]
+                                    [num_params = 1]
+                                    [num_args = 1])
+                            When !is_compatible {
+                                (die "Protocol mismatch in function application.")
+                            }
+                            (Return
+                                (lift2 (eval func) (map args eval)
+                                    Func {func args}
+                                        If [num_params = num_args]
+                                            'app_known.{i func args}
+                                            'app.{func args}))
                         | 'expr
-                            (lift2 (eval func) (sequence (LIST.map args eval))
-                                Func {func args} 'app.{func args})
+                            (Return
+                                (lift2 (eval func) (map args eval)
+                                    Func {func args} 'app.{func args}))
                         })
             | _
-                (lift2 (eval func) (sequence (LIST.map args eval))
+                (lift2 (eval func) (map args eval)
                     Func {func args} 'app.{func args})
             }
         | 'func.{free param_pats expr}
@@ -432,30 +929,21 @@ Define (lift_functions i expr)
                 (LIST.map vars
                     Func var {var 'expr})
             In
-            (lift2 (sequence (LIST.map inits eval)) (in_context bindings (eval expr))
+            (lift2 (map inits eval) (in_context bindings (eval expr))
                 Func {inits expr} 'iterate.{vars inits expr})
         | 'continue.exprs
-            (lift1 (sequence (LIST.map exprs eval))
+            (lift1 (map exprs eval)
                 Func exprs 'continue.exprs)
         | 'cond.clauses
             Define (compile_clause {test body})
                 (lift2 (eval test) (eval body)
                     Func clause clause)
             In
-            (lift1 (sequence (LIST.map clauses compile_clause))
+            (lift1 (map clauses compile_clause)
                 Func clauses 'cond.clauses)
         | 'if.{test then else}
             (lift3 (eval test) (eval then) (eval else)
                 Func {test then else} 'if.{test then else})
-        | 'not.expr
-            (lift1 (eval expr)
-                Func expr 'not.expr)
-        | 'and.{test then}
-            (lift2 (eval test) (eval then)
-                Func {test then} 'and.{test then})
-        | 'or.{test else}
-            (lift2 (eval test) (eval else)
-                Func {test else} 'or.{test else})
         | 'labeled.{label expr}
             (lift1 (eval expr)
                 Func expr 'labeled.{label expr})
@@ -472,7 +960,7 @@ Define (lift_functions i expr)
                 (lift1 (in_context bindings (eval body))
                     Func body {pat body})
             In
-            (lift2 (eval expr) (sequence (LIST.map clauses compile_clause))
+            (lift2 (eval expr) (map clauses compile_clause)
                 Func {expr clauses} 'match.{expr clauses})
         }
     In
@@ -480,76 +968,54 @@ Define (lift_functions i expr)
         (SEARCH.MAP STRING.compare
             Func {key _} key)
     In
-    Unfold {command env i funcs} From {'eval.expr MAP.empty i 'nil}
-        Match command {
-        | 'pure.x {x i funcs}
-        | 'lift1.{c1 f}
-            Let {x1 i funcs} (Fold c1 env i funcs)
-            In
-            {(f x1) i funcs}
-        | 'lift2.{c1 c2 f}
-            Let {x1 i funcs} (Fold c1 env i funcs)
-            In
-            Let {x2 i funcs} (Fold c2 env i funcs)
-            In
-            {(f x1 x2) i funcs}
-        | 'lift3.{c1 c2 c3 f}
-            Let {x1 i funcs} (Fold c1 env i funcs)
-            In
-            Let {x2 i funcs} (Fold c2 env i funcs)
-            In
-            Let {x3 i funcs} (Fold c3 env i funcs)
-            In
-            {(f x1 x2 x3) i funcs}
-        | 'bind1.{c1 f}
-            Let {x1 i funcs} (Fold c1 env i funcs)
-            In
-            (Fold (f x1) env i funcs)
-        | 'lookup.var
-            Match (MAP.search env var) {
-            | 'just.{_ expr} {expr i funcs}
-            | 'nothing (die "No var.")
+    Let {init _ functions}
+        Unfold {command env i funcs} From {'eval.expr MAP.empty 1 'nil}
+            Match command {
+            | 'pure.x {x i funcs}
+            | 'lift1.{c1 f}
+                Let {x1 i funcs} (Fold c1 env i funcs)
+                In
+                {(f x1) i funcs}
+            | 'lift2.{c1 c2 f}
+                Let {x1 i funcs} (Fold c1 env i funcs)
+                In
+                Let {x2 i funcs} (Fold c2 env i funcs)
+                In
+                {(f x1 x2) i funcs}
+            | 'lift3.{c1 c2 c3 f}
+                Let {x1 i funcs} (Fold c1 env i funcs)
+                In
+                Let {x2 i funcs} (Fold c2 env i funcs)
+                In
+                Let {x3 i funcs} (Fold c3 env i funcs)
+                In
+                {(f x1 x2 x3) i funcs}
+            | 'bind1.{c1 f}
+                Let {x1 i funcs} (Fold c1 env i funcs)
+                In
+                (Fold (f x1) env i funcs)
+            | 'lookup.var
+                Match (MAP.search env var) {
+                | 'just.{_ expr} {expr i funcs}
+                | 'nothing (die "No var.")
+                }
+            | 'in_context.{bindings c}
+                Let env (LIST.reduce bindings env MAP.insert)
+                In
+                (Fold c env i funcs)
+            | 'insert_func.f
+                Let {x func} (f i)
+                In
+                {x [i + 1] [func & funcs]}
+            | 'eval.expr (Fold (compile expr) env i funcs)
             }
-        | 'in_context.{bindings c}
-            Let env (LIST.reduce bindings env MAP.insert)
-            In
-            (Fold c env i funcs)
-        | 'insert_func.f
-            Let {x func} (f i)
-            In
-            {x [i + 1] [func & funcs]}
-        | 'eval.expr (Fold (compile expr) env i funcs)
-        }
+    In
+    {init functions}
 
-Define (collect_constants program)
-    Define (pure x) 'pure.x
-    Define (lift1 c1 f) 'lift1.{c1 f}
-    Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
-    Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
-    Define (bind1 c1 f) 'bind1.{c1 f}
+Define (collect_constants init functions)
     Define (intern_string s) 'intern_string.s
     Define (intern_label name) 'intern_label.name
     Define (intern_layout layout) 'intern_layout.layout
-    Define (eval expr) 'eval.expr
-    In
-    Define (sequence cs)
-        (LIST.fold cs (pure 'nil)
-            Func {c1 c2} (lift2 c1 c2 LIST.cons))
-    In
-    Let package_table
-        Let MAP (SEARCH.MAP STRING.compare [Func {key _} key])
-        In
-        Let {_ map}
-            (LIST.reduce program {0 MAP.empty}
-                Func {{i map} package}
-                    {[i + 1] (MAP.insert map {package.path i})})
-        In
-        Define (lookup path)
-            Match (MAP.search map path) {
-            | 'just.{_ i} i
-            }
-        In
-        {: lookup}
     In
     Define (compile expr)
         Match expr {
@@ -557,7 +1023,6 @@ Define (collect_constants program)
         | 'false (pure expr)
         | 'num._ (pure expr)
         | 'str.s (intern_string s)
-        | 'package.path (pure 'package.(package_table.lookup path))
         | 'var._ (pure expr)
         | 'chain.{expr chain}
             Define (compile_access access)
@@ -568,13 +1033,13 @@ Define (collect_constants program)
                 | 'num.i (pure 'tuple_fetch.i)
                 }
             In
-            (lift2 (eval expr) (sequence (LIST.map chain compile_access))
+            (lift2 (eval expr) (map chain compile_access)
                 Func {expr chain} 'chain.{expr chain})
         | 'tuple.exprs
-            (lift1 (sequence (LIST.map exprs eval))
+            (lift1 (map exprs eval)
                 Func exprs 'tuple.exprs)
         | 'record.{labels inits}
-            (bind1 (sequence (LIST.map labels intern_label))
+            (bind1 (map labels intern_label)
                 Func ids
                     Let {layout inits}
                         Define (sort pairs)
@@ -584,13 +1049,13 @@ Define (collect_constants program)
                         In
                         (LIST.unzip (sort (LIST.zip ids inits)))
                     In
-                    (lift2 (intern_layout layout) (sequence (LIST.map inits eval))
+                    (lift2 (intern_layout layout) (map inits eval)
                         Func {layout_id inits}
                             'record.{layout_id inits}))
         | 'block.{binders expr}
             Let binder_exprs (LIST.map binders binder_expr)
             In
-            (lift2 (sequence (LIST.map binder_exprs eval)) (eval expr)
+            (lift2 (map binder_exprs eval) (eval expr)
                 Func {binder_exprs expr}
                     Let binders
                         (LIST.map (LIST.zip binders binder_exprs)
@@ -601,53 +1066,34 @@ Define (collect_constants program)
                     In
                     'block.{binders expr})
         | 'app_known.{j func args}
-            (lift2 (sequence (LIST.map args eval)) (eval func)
+            (lift2 (map args eval) (eval func)
                 Func {args func} 'closure_app_known.{j func args})
         | 'app.{func args}
-            Match func {
-            | 'prim.name
-                Cond {
-                | (STRING.equal name "cons")
-                    (eval 'labeled.{"cons" 'tuple.args})
-                | (STRING.equal name "not_equal")
-                    (eval 'if.{'app.{'prim."equal" args} 'false 'true})
-                | True
-                    (lift1 (sequence (LIST.map args eval))
-                        Func args 'prim_app.{name args})
-                }
-            | _
-                (lift2 (sequence (LIST.map args eval)) (eval func)
+            If Pattern 'prim.name Matches func
+                (lift1 (map args eval)
+                    Func args 'prim_app.{name args})
+                (lift2 (map args eval) (eval func)
                     Func {args func} 'closure_app.{func args})
-            }
         | 'closure._ (pure expr)
         | 'func.{j free param_pats expr}
             (lift1 (eval expr)
                 Func expr 'func.{j free param_pats expr})
         | 'iterate.{vars inits expr}
-            (lift2 (sequence (LIST.map inits eval)) (eval expr)
+            (lift2 (map inits eval) (eval expr)
                 Func {inits expr} 'iterate.{vars inits expr})
         | 'continue.exprs
-            (lift1 (sequence (LIST.map exprs eval))
+            (lift1 (map exprs eval)
                 Func exprs 'continue.exprs)
         | 'cond.clauses
             Define (compile_clause {test body})
                 (lift2 (eval test) (eval body)
                     Func clause clause)
             In
-            (lift1 (sequence (LIST.map clauses compile_clause))
+            (lift1 (map clauses compile_clause)
                 Func clauses 'cond.clauses)
         | 'if.{test then else}
             (lift3 (eval test) (eval then) (eval else)
                 Func {test then else} 'if.{test then else})
-        | 'not.expr
-            (lift1 (eval expr)
-                Func expr 'not.expr)
-        | 'and.{test then}
-            (lift2 (eval test) (eval then)
-                Func {test then} 'and.{test then})
-        | 'or.{test else}
-            (lift2 (eval test) (eval else)
-                Func {test else} 'or.{test else})
         | 'labeled.{label expr}
             (bind1 (intern_label label)
                 Func id
@@ -664,43 +1110,31 @@ Define (collect_constants program)
                         Func {id body} {'labeled.{id vars} body})
                 }
             In
-            (lift2 (eval expr) (sequence (LIST.map clauses compile_clause))
+            (lift2 (eval expr) (map clauses compile_clause)
                 Func {expr clauses} 'match.{expr clauses})
         }
     In
     Let command
-        Define (eval_package package)
-            (lift2 (eval package.init) (sequence (LIST.map package.functions eval))
-                Func {init functions}
-                    {
-                    : path package.path
-                    : imports package.imports
-                    : init
-                    : functions
-                    })
-        In
-        (lift3 (intern_label "nil") (intern_label "cons")
-            (sequence (LIST.map program eval_package))
-            Func {nil_label cons_label packages}
-                {nil_label cons_label packages})
+        (lift2 (eval init) (map functions eval)
+            Func x x)
     Let state
         Let string_env {STRING_ID_MAP.empty 0}
         Let label_env
             {
-            : name_of_id ID_LABEL_MAP.empty
-            : id_of_name LABEL_ID_MAP.empty
-            : i 0
+            :name_of_id ID_LABEL_MAP.empty
+            :id_of_name LABEL_ID_MAP.empty
+            :i 0
             }
         Let layout_env
             {
-            : indexes 'nil
-            : map LAYOUT_ID_MAP.empty
-            : i 0
+            :indexes 'nil
+            :map LAYOUT_ID_MAP.empty
+            :i 0
             }
         In
         {string_env label_env layout_env}
     In
-    Let {output state}
+    Let {init_functions state}
         Unfold {command state}
             Match command {
             | 'pure.x {x state}
@@ -749,9 +1183,9 @@ Define (collect_constants program)
                     In
                     Let label_env
                         {
-                        : name_of_id (ID_LABEL_MAP.insert label_env.name_of_id {i name})
-                        : id_of_name (LABEL_ID_MAP.insert label_env.id_of_name {name i})
-                        : i [i + 1]
+                        :name_of_id (ID_LABEL_MAP.insert label_env.name_of_id {i name})
+                        :id_of_name (LABEL_ID_MAP.insert label_env.id_of_name {name i})
+                        :i [i + 1]
                         }
                     In
                     {i {string_env label_env layout_env}}
@@ -766,9 +1200,9 @@ Define (collect_constants program)
                     In
                     Let layout_env
                         {
-                        : map (LAYOUT_ID_MAP.insert layout_env.map {layout i})
-                        : indexes [layout & layout_env.indexes]
-                        : i [i + (LIST.length layout) + 1]
+                        :map (LAYOUT_ID_MAP.insert layout_env.map {layout i})
+                        :indexes [layout & layout_env.indexes]
+                        :i [i + (LIST.length layout) + 1]
                         }
                     In
                     {i {string_env label_env layout_env}}
@@ -776,7 +1210,7 @@ Define (collect_constants program)
             | 'eval.expr (Fold (compile expr) state)
             }
     In
-    Let {nil_label cons_label packages} output
+    Let {init functions} init_functions             ;   TODO Make this unnecessary.
     Let {string_env label_env layout_env} state
     In
     Let constants
@@ -791,12 +1225,11 @@ Define (collect_constants program)
     Let label_names (ID_LABEL_MAP.list label_env.name_of_id)
     In
     {
-    : constants
-    : label_names
-    : record_indexes
-    : packages
-    : nil_label
-    : cons_label
+    :constants
+    :label_names
+    :record_indexes
+    :init
+    :functions
     }
 
 Where
@@ -818,47 +1251,34 @@ Let LAYOUT_ID_MAP
             | True
                 (LIST.reduce (LIST.zip a b) 'equal
                     Func {relation {ai bi}}
-                        Match relation {
-                        | 'equal
+                        If Pattern 'equal Matches relation
                             Cond {
                             | [ai < bi] 'less
                             | [ai > bi] 'greater
                             | True 'equal
                             }
-                        | _ relation
-                        })
+                            relation)
             }
         Func {key _} key)
 
 Define (elaborate_patterns program)
     Let VAR_MAP (SEARCH.MAP STRING.compare [Func {key _} key])
     In
-    Let packages
-        (LIST.map program.packages
-            Func package
-                Let functions
-                    (LIST.map package.functions
-                        Func function
-                            (elaborate_patterns VAR_MAP 0 VAR_MAP.empty
-                                'nothing function))
-                Let init
-                    (elaborate_patterns VAR_MAP 0 VAR_MAP.empty
-                        'nothing package.init)
-                In
-                {
-                : path package.path
-                : imports package.imports
-                : functions
-                : init
-                })
+    Let functions
+        (LIST.map program.functions
+            Func function
+                (elaborate_patterns VAR_MAP 0 VAR_MAP.empty
+                    'nothing function))
+    Let init
+        (elaborate_patterns VAR_MAP 0 VAR_MAP.empty
+            'nothing program.init)
     In
     {
-    : packages
-    : constants program.constants
-    : label_names program.label_names
-    : record_indexes program.record_indexes
-    : nil_label program.nil_label
-    : cons_label program.cons_label
+    :init
+    :functions
+    :constants program.constants
+    :label_names program.label_names
+    :record_indexes program.record_indexes
     }
 
 Where
@@ -873,7 +1293,6 @@ Define (elaborate_patterns VAR_MAP m env loop expr)
         | 'false 'false
         | 'num.n 'num.(RUNTIME.encode_small_integer n)
         | 'const.i 'c.i
-        | 'package.i 'p.i
         | 'var.name
             Match (VAR_MAP.search env name) {
             | 'nothing (die "Unexpected scope error.")
@@ -998,7 +1417,7 @@ Define (elaborate_patterns VAR_MAP m env loop expr)
                             Let {_ m inits env}
                                 (LIST.reduce names {0 m inits env}
                                     Func {{j m inits env} name}
-                                        \ TODO Handle name="_" case better.
+                                        ;   TODO Handle name="_" case better.
                                         Let {m xm} (fresh_var m)
                                         In
                                         Let env
@@ -1120,29 +1539,15 @@ Define (elaborate_patterns VAR_MAP m env loop expr)
                     | 'true (Fold m env loop body)
                     | 'false expr
                     | _
-                        'if.{(Fold m env 'nothing test)
-                            (Fold m env loop body) expr}
+                        'if.{(Fold m env 'nothing test) (Fold m env loop body) expr}
                     })
         | 'if.{test_expr then_expr else_expr}
             'if.{(Fold m env 'nothing test_expr)
                 (Fold m env loop then_expr)
                 (Fold m env loop else_expr)}
-        | 'not.expr
-            'if.{(Fold m env 'nothing expr) 'false 'true}
-        | 'and.{test_expr then_expr}
-            'if.{(Fold m env 'nothing test_expr)
-                (Fold m env loop then_expr)
-                'false}
-        | 'or.{test_expr else_expr}
-            'if.{(Fold m env 'nothing test_expr)
-                'true
-                (Fold m env loop else_expr)}
         | 'labeled.{label expr}
             Let expr_is_empty_tuple
-                Match expr {
-                | 'tuple.exprs Match exprs { | 'nil True | _ False }
-                | _ False
-                }
+                (And [Pattern 'tuple.exprs Matches expr] [Pattern 'nil Matches exprs])
             In
             If expr_is_empty_tuple
                 'labeled_empty_tuple.label
@@ -1238,12 +1643,41 @@ Define (binder_expr binder)
 
 Where
 
-Let die OS.die
+Define (map xs f)
+    (LIST.fold xs (pure 'nil)
+        Func {x c} (lift2 (f x) c LIST.cons))
+
+Where
+
+Define (pure x) 'pure.x
+Define (lift1 c1 f) 'lift1.{c1 f}
+Define (lift2 c1 c2 f) 'lift2.{c1 c2 f}
+Define (lift3 c1 c2 c3 f) 'lift3.{c1 c2 c3 f}
+Define (bind1 c1 f) 'bind1.{c1 f}
+Define (eval expr) 'eval.expr
+
+Where
+
+Open Package "os" {:die}
+
+Open Z
+    {
+    :Infix <
+    :Infix >
+    :Infix =
+    :Infix +
+    :Infix -
+    }
+
+Open LIST {:Infix &}
+
+Open Package "func" {:Infix <-}
+
+Open Package "bool" {:Prefix !}
 
 Where
 
 Let LIST Package "list"
-Let OS Package "os"
 Let QUEUE Package "queue"
 Let RUNTIME Package "runtime"
 Let SEARCH Package "search"

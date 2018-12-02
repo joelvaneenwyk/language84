@@ -1,49 +1,125 @@
 {
-: append
-: concat
-: join
-: equal
-: length
-: fetch
-: clip
-: compare
+:append
+:concat
+:join
+:equal
+:length
+:fetch
+:clip
+:compare
 }
 
 Where
 
 Define (join glue strings)
-    (concat (LIST.join glue strings))
+    Match strings {
+    | 'nil ""
+    | 'cons.{s strings}
+        Let glue_len (length glue)
+        In
+        (CHUNK.new_ro
+            Iterate {size strings} From {(length s) strings}
+                Match strings {
+                | 'nil size
+                | 'cons.{s strings}
+                    (Continue [size + glue_len + (length s)] strings)
+                }
+            Func d Begin {
+                Let s_len (length s)
+                (CHUNK.store_bytes d 0 s 0 s_len)
+                Iterate {i strings} From {s_len strings}
+                    Begin Match strings {
+                    | 'nil
+                    | 'cons.{s strings}
+                        (CHUNK.store_bytes d i glue 0 glue_len)
+                        Let i [i + glue_len]
+                        Let s_len (length s)
+                        (CHUNK.store_bytes d i s 0 s_len)
+                        Let i [i + s_len]
+                        (Continue i strings)
+                    }
+            })
+    }
 
 Where
 
-Define (concat strings) (LIST.reduce strings "" append)
+Define (concat strings)
+    Let size (LIST.reduce strings 0 [Func {size s} [size + (length s)]])
+    In
+    (CHUNK.new_ro size
+        Func d
+            Iterate {i strings} From {0 strings}
+                Begin Match strings {
+                | 'nil
+                | 'cons.{s strings}
+                    Let s_len (length s)
+                    (CHUNK.store_bytes d i s 0 s_len)
+                    (Continue [i + s_len] strings)
+                })
+
+Where
+
+Define (append s1 s2)
+    Let len1 (length s1)
+    Let len2 (length s2)
+    In
+    (CHUNK.new_ro [len1 + len2]
+        Func d Begin {
+            (CHUNK.store_bytes d 0 s1 0 len1)
+            (CHUNK.store_bytes d len1 s2 0 len2)
+        })
+
+Where
+
+Define (equal s1 s2)
+    Pattern 'equal Matches (compare s1 s2)
+
+Define (clip s begin end)
+    (CHUNK.fetch_bytes_ro s begin [end - begin])
 
 Where
 
 Define (compare a b)
-    Let sign (Prim string_compare a b)
+    Let m (length a)
+    Let n (length b)
     In
-    Cond {
-    | [sign = -1] 'less
-    | [sign = 0] 'equal
-    | [sign = 1] 'greater
-    }
-
-Define (append s1 s2)
-    (Prim string_append s1 s2)
-
-Define (equal s1 s2)
-    (Prim string_equal s1 s2)
-
-Define (length s)
-    (Prim string_length s)
-
-Define (fetch s i)
-    (Prim string_fetch s i)
-
-Define (clip s begin end)
-    (Prim string_clip s begin end)
+    Iterate i From 0
+        Cond {
+        | (And [i = m] [i = n]) 'equal
+        | [i = m] 'less
+        | [i = n] 'greater
+        | True
+            Let x (fetch a i)
+            Let y (fetch b i)
+            In
+            Cond {
+            | [x < y] 'less
+            | [x > y] 'greater
+            | True (Continue [i + 1])
+            }
+        }
 
 Where
 
+Define (length s)
+    (CHUNK.size s)
+
+Define (fetch s i)
+    (CHUNK.fetch_uint8 s i)
+
+Where
+
+Open Z
+    {
+    :Infix <
+    :Infix >
+    :Infix =
+    :Infix +
+    :Infix -
+    }
+
+Where
+
+Let CHUNK Package "chunk"
 Let LIST Package "list"
+Let Z Package "z"

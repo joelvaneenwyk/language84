@@ -1,0 +1,12 @@
+# Ignore generated files
+
+*.o
+*.c.d
+84_stable
+84
+84.c
+local.make
+
+# Ignore 'hello world' sample
+
+hello

@@ -1,12 +1,12 @@
 {
-: empty
-: new
-: is_empty
-: push
-: pop
-: pop_all
-: append
-: concat
+:empty
+:new
+:is_empty
+:push
+:pop
+:pop_all
+:append
+:concat
 }
 
 Where
@@ -37,8 +37,8 @@ Where
 
 Define (push queue item)
     {
-    : incoming [item & queue.incoming]
-    : outgoing queue.outgoing
+    :incoming [item & queue.incoming]
+    :outgoing queue.outgoing
     }
 
 Define (pop queue)
@@ -47,37 +47,37 @@ Define (pop queue)
         | 'cons.{item outgoing}
             Let queue
                 {
-                : incoming queue.incoming
-                : outgoing
+                :incoming queue.incoming
+                :outgoing
                 }
             In
             'just.{item queue}
         | 'nil
-            Match queue.incoming {
-            | 'nil 'nothing
-            | _ (Fold (new (LIST.reverse queue.incoming)))
-            }
+            If Pattern 'nil Matches queue.incoming
+                'nothing
+                (Fold (new (LIST.reverse queue.incoming)))
         }
 
 Where
 
 Define (new init)
     {
-    : incoming 'nil
-    : outgoing init
+    :incoming 'nil
+    :outgoing init
     }
 
 Let empty
     {
-    : incoming 'nil
-    : outgoing 'nil
+    :incoming 'nil
+    :outgoing 'nil
     }
 
 Define (is_empty queue)
-    Match queue.incoming {
-    | 'nil Match queue.outgoing { | 'nil True | 'cons._ False }
-    | 'cons._ False
-    }
+    (And [Pattern 'nil Matches queue.incoming] [Pattern 'nil Matches queue.outgoing])
+
+Where
+
+Open LIST {:Infix &}
 
 Where
 

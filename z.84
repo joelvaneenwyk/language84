@@ -1,13 +1,25 @@
 {
-: read
-: show
-: compare
-: min
-: max
-: pow
-: gcd
-: abs
-: fold
+:Prefix -
+:Infix <
+:Infix <=
+:Infix >
+:Infix >=
+:Infix =
+:Infix !=
+:Infix +
+:Infix -
+:Infix *
+:Infix /
+:Infix %
+:read
+:show
+:compare
+:min
+:max
+:pow
+:gcd
+:abs
+:fold
 }
 
 Where
@@ -36,13 +48,13 @@ Define (fold n z succ)
 Where
 
 Define (read text)
-    Let n (STRING.length text)
+    Let n (Prim chunk_size text)
     In
     Iterate {i num} From {0 0}
         Cond {
         | [i = n] 'just.num
         | True
-            Let c (STRING.fetch text i)
+            Let c (Prim chunk_fetch_uint8 text i)
             In
             If (And [c >= `0`] [c <= `9`])
                 (Continue [i + 1] [[10 * num] + [c - `0`]])
@@ -72,4 +84,17 @@ Define (abs n)
 
 Where
 
-Let STRING Package "string"
+Define -a (Prim negate a)
+
+Define [a < b] (Prim less a b)
+Define [a <= b] (Prim less_or_equal a b)
+Define [a > b] (Prim greater a b)
+Define [a >= b] (Prim greater_or_equal a b)
+Define [a = b] (Prim equal a b)
+Define [a != b] If (Prim equal a b) False True
+
+Define [[a] + b] (Prim add a b)
+Define [[a] - b] (Prim subtract a b)
+Define [[a] * b] (Prim multiply a b)
+Define [a / b] (Prim quotient a b)
+Define [a % b] (Prim remainder a b)

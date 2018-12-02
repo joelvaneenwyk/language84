@@ -1,5 +1,5 @@
 {
-: emit
+:emit
 }
 
 Where
@@ -36,17 +36,7 @@ Define (emit w program)
                 })
             (write ";\n")
         }
-        (write "static X ")
-        (LIST.reduce (LIST.iota (LIST.length program.packages)) ""
-            Func {prefix i} Begin {
-                (write prefix)
-                (write "p")
-                (write (Z.show i))
-                (Return ",")
-            })
-        (write ";\n")
-        (LIST.for_each program.packages
-            Func package (LIST.for_each (LIST.reverse package.functions) emit))
+        (LIST.for_each (LIST.reverse program.functions) emit)
         (write "int main(int argc,const char*argv[]){\n")
         (write "static _Alignas(16) char heap_bytes[256*1024*1024];")
         (write "s36(sizeof(heap_bytes),heap_bytes,1024*1024,sizeof(record_layouts)/sizeof(record_layouts[0]),record_layouts,argc,argv);\n")
@@ -57,15 +47,10 @@ Define (emit w program)
                 (write s)
                 (write ";s86(sizeof(s)-1,s);});")
             })
-        (LIST.for_each_numbered program.packages
-            Func {i package} Begin {
-                (write "\n")
-                (emit 'p.i)
-                (write "=")
-                (emit package.init)
-                (write ";")
-            })
-        (write "\nreturn 0;}\n")
+        (write "\n")
+        (emit program.init)
+        (write ";\n")
+        (write "return 0;}\n")
     }
 
 Where
@@ -435,6 +420,16 @@ Where
 
 Define (encode_empty_variant label)
     [[label * 256] + 47]
+
+Where
+
+Open Z
+    {
+    :Infix +
+    :Infix *
+    }
+
+Open LIST {:Infix &}
 
 Where
 

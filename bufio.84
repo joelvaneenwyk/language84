@@ -1,11 +1,11 @@
 {
-: new_writer
-: new_writer2
-: write_all
-: write_byte
-: write
-: flush
-: with_writer
+:new_writer
+:new_writer2
+:write_all
+:write_byte
+:write
+:flush
+:with_writer
 }
 
 Where
@@ -31,8 +31,8 @@ Define (new_writer2 fd size)
         (flush w.state)
     In
     {
-    : interface {: write : write_all : write_byte : flush}
-    : state (new_writer fd size)
+    :interface {:write :write_all :write_byte :flush}
+    :state (new_writer fd size)
     }
 
 Where
@@ -44,9 +44,7 @@ Where
 
 Define (write_byte w byte)
     Begin {
-        When [(fetch_top w) = (size w)] {
-            (flush w)
-        }
+        When [(fetch_top w) = (size w)] { (flush w) }
         Begin {
             Let top (fetch_top w)
             (CHUNK.store_byte w [8 + top] byte)
@@ -69,9 +67,7 @@ Define (write w bytes start count)
                 Begin Cond {
                 | [top = 0]
                     Let r (OS.write fd bytes start count)
-                    When [r <= 0] {
-                        (OS.die "Failed to write bytes.")
-                    }
+                    When [r <= 0] { (OS.die "Failed to write bytes.") }
                     (Continue [start + r] [count - r])
                 | True
                     (CHUNK.store_bytes w [8 + top] bytes start room)
@@ -99,16 +95,14 @@ Define (flush w)
     In
     When [top > 0] {
         Let r (OS.write fd w 8 top)
-        When [r != top] {
-            (OS.die "Failed to flush buffer.")
-        }
+        When [r != top] { (OS.die "Failed to flush buffer.") }
         (store_top w 0)
     }
 
 Where
 
 Define (alloc size)
-    (CHUNK.new [8 + size])
+    (CHUNK.new_rw [8 + size])
 
 Define (init w fd)
     Begin {
@@ -134,7 +128,23 @@ Define (size w)
 
 Where
 
+Open Z
+    {
+    :Infix <=
+    :Infix >
+    :Infix =
+    :Infix !=
+    :Infix +
+    :Infix -
+    }
+
+Open LIST {:Infix &}
+
+Where
+
 Let CHUNK Package "chunk"
 Let IO Package "io"
+Let LIST Package "list"
 Let OS Package "os"
 Let STDIO Package "stdio"
+Let Z Package "z"

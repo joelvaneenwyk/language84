@@ -1,5 +1,5 @@
 {
-: show
+:show
 }
 
 Where
@@ -29,7 +29,7 @@ Define (locate_token text j)
                     (Continue [i + 1] line k)
     In
     Iterate i From k
-        Let start (SCAN.whitespace text i)
+        Let start (SCAN.skip_whitespace text i)
         In
         Let {i _} (SCAN.token text start)
         In
@@ -75,6 +75,19 @@ Define (show_token text start end)
 
 Where
 
+Open Z
+    {
+    :Infix <
+    :Infix =
+    :Infix !=
+    :Infix +
+    }
+
+Open LIST {:Infix &}
+
+Where
+
+Let LIST Package "list"
 Let OS Package "os"
 Let SCAN Package "scan"
 Let STDIO Package "stdio"

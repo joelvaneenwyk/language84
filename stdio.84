@@ -1,12 +1,141 @@
 {
-: print
-: print_line
+:vprintf
+:vsprintf
+:sprintf
+:printf
+:print
+:print_line
 }
 
 Where
+
+Let vsprintf (arglist_printf concatss)
+
+Let vprintf (arglist_printf printss)
+
+Let sprintf (curried_printf concatss)
+
+Let printf (curried_printf printss)
+
+Where
+
+Define (arglist_printf finish)
+    Define ((interpretf term) args)
+        Iterate {ss term args} From {'nil term args}
+            Match term {
+            | 'finish
+                (finish ss)
+            | 'copy.{s term}
+                (Continue [s & ss] term args)
+            | 'subst.{c term}
+                Match args {
+                | 'cons.{arg args}
+                    (Continue [(format c arg) & ss] term args)
+                }
+            }
+    In
+    [parsef >> interpretf]
+
+Define (curried_printf finish)
+    Define (interpretf term)
+        Unfold {ss term} From {'nil term}
+            Match term {
+            | 'finish
+                (finish ss)
+            | 'copy.{s term}
+                (Fold [s & ss] term)
+            | 'subst.{c term}
+                Func x (Fold [(format c x) & ss] term)
+            }
+    In
+    [parsef >> interpretf]
+
+Define (concatss ss)
+    Let size (LIST.reduce ss 0 [Func {size s} [size + (STRING.length s)]])
+    In
+    (CHUNK.new_ro size
+        Func chunk
+            Iterate {i ss} From {size ss}
+                Begin Match ss {
+                | 'nil
+                | 'cons.{s ss}
+                    Let s_len (STRING.length s)
+                    Let i [i - s_len]
+                    (CHUNK.store_bytes chunk i s 0 s_len)
+                    (Continue i ss)
+                })
+
+Define (printss ss)
+    Unfold ss
+        Begin Match ss {
+        | 'nil
+        | 'cons.{s ss}
+            (Fold ss)
+            (print s)
+        }
+
+Where
+
+Let parsef
+    Define (copy s h i term)
+        If [h = i] term 'copy.{(STRING.clip s h i) term}
+    Define (subst c term)
+        'subst.{c term}
+    Let finish 'finish
+    In
+    Func s
+        Let m (STRING.length s)
+        In
+        Unfold {h i} From {0 0}
+            Let j [i + 1]
+            Let k [i + 2]
+            In
+            Cond {
+            | [i = m] (copy s h m finish)
+            | [(STRING.fetch s i) = `%`]
+                Let c (STRING.fetch s j)
+                In
+                If [c = `%`]
+                    (copy s h j (Fold k k))
+                    (copy s h i (subst c (Fold k k)))
+            | True (Fold h j)
+            }
+
+Define (format c x)
+    Cond {
+    | [c = `s`] x
+    | [c = `d`] (Z.show x)
+    }
 
 Define (print s)
     (Prim print s)
 
 Define (print_line s)
     (Prim print_line s)
+
+Where
+
+Open Z
+    {
+    :Infix =
+    :Infix +
+    :Infix -
+    }
+
+Open LIST {:Infix &}
+
+Open FUNC
+    {
+    :Infix >>
+    :Infix <-
+    }
+
+Where
+
+Let CHUNK Package "chunk"
+Let FUNC Package "func"
+Let LIST Package "list"
+Let QUEUE Package "queue"
+Let OS Package "os"
+Let STRING Package "string"
+Let Z Package "z"

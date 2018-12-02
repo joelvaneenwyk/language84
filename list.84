@@ -1,24 +1,25 @@
 {
-: cons
-: fold
-: reduce
-: for_each
-: for_each_numbered
-: iota
-: map
-: filter
-: length
-: reverse
-: reverse_append
-: append
-: concat
-: concat_map
-: fetch
-: zip
-: unzip
-: last
-: join
-: repeat
+:Infix &
+:cons
+:fold
+:reduce
+:for_each
+:for_each_numbered
+:iota
+:map
+:filter
+:length
+:reverse
+:reverse_append
+:append
+:concat
+:concat_map
+:fetch
+:zip
+:unzip
+:last
+:join
+:repeat
 }
 
 Where
@@ -138,3 +139,19 @@ Define (for_each_numbered list command)
             (command i elem)
             (Continue [i + 1] list)
         }
+
+Where
+
+Open Z
+    {
+    :Infix <
+    :Infix =
+    :Infix +
+    :Infix -
+    }
+
+Where
+
+Define [head & [tail]] 'cons.{head tail}
+
+Let Z Package "z"

@@ -2,11 +2,11 @@
 //
 //   02  07
 //   16
-// 
-//   32  34
-//   48  49
+//   22  25
+//   34  37
+//   44  45  48  49
 //   51  57
-//   64  66
+//   64  65  69
 //   70  73  77
 //   81  83
 //   90  94  96
@@ -29,6 +29,7 @@ typedef unsigned long uintptr_t;
 
 typedef _Bool bool;
 
+typedef int pid_t;
 typedef unsigned long rlim_t;
 
 struct rlimit {
@@ -111,78 +112,6 @@ struct stat {
 #define PROT_WRITE 2
 #define PROT_EXEC 4
 
-uint16_t htole16(uint16_t x) { return x; }
-uint32_t htole32(uint32_t x) { return x; }
-uint64_t htole64(uint64_t x) { return x; }
-
-uint16_t le16toh(uint16_t x) { return x; }
-uint32_t le32toh(uint32_t x) { return x; }
-uint64_t le64toh(uint64_t x) { return x; }
-
-static long
-syscall1(long n, long a1)
-{
-    unsigned long ret;
-    __asm__ __volatile__ (
-            "syscall"
-            : "=a"(ret)
-            : "a"(n), "D"(a1)
-            : "rcx", "r11", "memory");
-    return ret;
-}
-
-static long
-syscall2(long n, long a1, long a2)
-{
-    unsigned long ret;
-    __asm__ __volatile__ (
-            "syscall"
-            : "=a"(ret)
-            : "a"(n), "D"(a1), "S"(a2)
-            : "rcx", "r11", "memory");
-    return ret;
-}
-
-static long
-syscall3(long n, long a1, long a2, long a3)
-{
-    unsigned long ret;
-    __asm__ __volatile__ (
-            "syscall"
-            : "=a"(ret)
-            : "a"(n), "D"(a1), "S"(a2), "d"(a3)
-            : "rcx", "r11", "memory");
-    return ret;
-}
-
-static long
-syscall4(long n, long a1, long a2, long a3, long a4)
-{
-    unsigned long ret;
-    register long r10 __asm__("r10") = a4;
-    __asm__ __volatile__ (
-            "syscall"
-            : "=a"(ret)
-            : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10)
-            : "rcx", "r11", "memory");
-    return ret;
-}
-
-static long
-syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
-{
-    unsigned long ret;
-    register long r10 __asm__("r10") = a4;
-    register long r8 __asm__("r8") = a5;
-    register long r9 __asm__("r9") = a6;
-    __asm__ __volatile__ (
-            "syscall"
-            : "=a"(ret)
-            : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8), "r"(r9)
-            : "rcx", "r11", "memory");
-    return ret;
-}
-
 #define SYS_read 0
 #define SYS_write 1
 #define SYS_open 2
@@ -191,6 +120,7 @@ syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
 #define SYS_fstat 5
 #define SYS_mmap 9
 #define SYS_munmap 11
+#define SYS_getpid 39
 #define SYS_execve 59
 #define SYS_exit 60
 #define SYS_getcwd 79
@@ -200,6 +130,84 @@ syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
 #define SYS_epoll_wait 232
 #define SYS_epoll_ctl 233
 #define SYS_epoll_create1 291
+
+long syscall0(long n);
+long syscall1(long n, long a1);
+long syscall2(long n, long a1, long a2);
+long syscall3(long n, long a1, long a2, long a3);
+long syscall4(long n, long a1, long a2, long a3, long a4);
+long syscall5(long n, long a1, long a2, long a3, long a4, long a5);
+long syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6);
+
+__asm__(
+    ".text\n"
+    "syscall0:\n"
+    "   mov %rdi, %rax\n"
+    "   syscall\n"
+    "   retq\n"
+    "syscall1:\n"
+    "   mov %rdi, %rax\n"
+    "   mov %rsi, %rdi\n"
+    "   syscall\n"
+    "   retq\n"
+    "syscall2:\n"
+    "   mov %rdi, %rax\n"
+    "   mov %rsi, %rdi\n"
+    "   mov %rdx, %rsi\n"
+    "   syscall\n"
+    "   retq\n"
+    "syscall3:\n"
+    "   mov %rdi, %rax\n"
+    "   mov %rsi, %rdi\n"
+    "   mov %rdx, %rsi\n"
+    "   mov %rcx, %rdx\n"
+    "   syscall\n"
+    "   retq\n"
+    "syscall4:\n"
+    "   mov %rdi, %rax\n"
+    "   mov %rsi, %rdi\n"
+    "   mov %rdx, %rsi\n"
+    "   mov %rcx, %rdx\n"
+    "   mov %r8, %r10\n"
+    "   syscall\n"
+    "   retq\n"
+    "syscall5:\n"
+    "   mov %rdi, %rax\n"
+    "   mov %rsi, %rdi\n"
+    "   mov %rdx, %rsi\n"
+    "   mov %rcx, %rdx\n"
+    "   mov %r8, %r10\n"
+    "   mov %r9, %r8\n"
+    "   syscall\n"
+    "   retq\n"
+    "syscall6:\n"
+    "   mov %rdi, %rax\n"
+    "   mov %rsi, %rdi\n"
+    "   mov %rdx, %rsi\n"
+    "   mov %rcx, %rdx\n"
+    "   mov %r8, %r10\n"
+    "   mov %r9, %r8\n"
+    "   mov 8(%rsp), %r9\n"
+    "   syscall\n"
+    "   retq\n"
+    ".global _start\n"
+    "_start:\n"
+    "   xor %rbp, %rbp\n"
+    "   mov (%rsp), %rdi\n"
+    "   lea 8(%rsp), %rsi\n"
+    "   call main\n"
+    "   mov %rax, %rdi\n"
+    "   mov $60, %rax\n"
+    "   syscall\n"
+);
+
+uint16_t htole16(uint16_t x) { return x; }
+uint32_t htole32(uint32_t x) { return x; }
+uint64_t htole64(uint64_t x) { return x; }
+
+uint16_t le16toh(uint16_t x) { return x; }
+uint32_t le32toh(uint32_t x) { return x; }
+uint64_t le64toh(uint64_t x) { return x; }
 
 int
 execve(const char *path, const char **argv, const char **env)
@@ -218,6 +226,12 @@ int
 getcwd(char *buf, size_t size)
 {
     return syscall2(SYS_getcwd, (long)buf, size);
+}
+
+pid_t
+getpid(void)
+{
+    return syscall0(SYS_getpid);
 }
 
 int
@@ -337,24 +351,6 @@ memset(void *dest, int c, size_t n)
     char *d = dest;
     for (size_t i = 0; i < n; i++) d[i] = c;
     return dest;
-}
-
-__asm__(
-    ".text\n"
-    ".global _start\n"
-    "_start:\n"
-    "   xor %rbp, %rbp\n"
-    "   mov (%rsp), %rdi\n"
-    "   lea 8(%rsp), %rsi\n"
-    "   call start_c\n"
-);
-
-void
-start_c(int argc, const char *argv[])
-{
-    extern int main(int argc, const char *argv[]);
-    int r = main(argc, argv);
-    syscall1(SYS_exit, r);
 }
 
 typedef uint32_t value;
@@ -686,24 +682,6 @@ static uint32_t
 string_length(value string)
 {
     return chunk_num_bytes(string_unbox(string));
-}
-
-static int
-string_compare(value s_value, value t_value)
-{
-    const struct chunk *s_rep = string_unbox(s_value);
-    const struct chunk *t_rep = string_unbox(t_value);
-    uint32_t s_len = chunk_num_bytes(s_rep);
-    uint32_t t_len = chunk_num_bytes(t_rep);
-    const char *s = s_rep->bytes;
-    const char *t = t_rep->bytes;
-    for (uint32_t i = 0; i < s_len || i < t_len; i++) {
-        if (i == s_len) return -1;
-        if (i == t_len) return 1;
-        if (s[i] < t[i]) return -1;
-        if (s[i] > t[i]) return 1;
-    }
-    return 0;
 }
 
 static const char *
@@ -1349,6 +1327,14 @@ s85(void)
     return value_make_box(TAG_HEAP_CHUNK, id);
 }
 
+//  s66: prim_getpid
+
+value
+s66(void)
+{
+    return integer_encode(getpid());
+}
+
 //  s03: prim_open
 
 value
@@ -1527,26 +1513,6 @@ s12(value integer)
     return string_make(len, &text[i]);
 }
 
-//  s22: prim_compose
-
-static value
-apply_composite(value closure, value x)
-{
-    const value *env = s62(closure);
-    value y = ((value (*)(value, value))s35(env[1], 1))(env[1], x);
-    return ((value (*)(value, value))s35(env[0], 1))(env[0], y);
-}
-
-value
-s22(value f, value g)
-{
-    bool f_is_closure = value_has_tag(f, 0xf, TAG_HEAP_CLOSURE);
-    bool g_is_closure = value_has_tag(g, 0xf, TAG_HEAP_CLOSURE);
-    if (!f_is_closure || !g_is_closure)
-        die("Value is not a function.");
-    return s75(apply_composite, 1, 2, (const value[]){f, g});
-}
-
 //  s93: prim_multiply
 
 value
@@ -1585,6 +1551,8 @@ s47(value a, value b)
 value
 s84(value n)
 {
+    if (n == (1 << 31))
+        die("Integer is out of range.");
     return integer_encode(-integer_decode(n));
 }
 
@@ -1689,76 +1657,6 @@ value
 s55(value a, value b)
 {
     return boolean_encode(integer_decode(a) >= integer_decode(b));
-}
-
-//  s65: prim_string_length
-
-value
-s65(value string)
-{
-    return integer_encode(string_length(string));
-}
-
-//  s69: prim_string_fetch
-
-value
-s69(value string, value i_value)
-{
-    int32_t i = integer_decode(i_value);
-    const struct chunk *string_rep = string_unbox(string);
-    if (i < 0 || chunk_num_bytes(string_rep) <= i)
-        die("Index is out of range.");
-    return integer_encode(string_rep->bytes[i]);
-}
-
-//  s37: prim_string_compare
-
-value
-s37(value s, value t)
-{
-    return integer_encode(string_compare(s, t));
-}
-
-//  s45: prim_string_equal
-
-value
-s45(value s, value t)
-{
-    int r = string_compare(s, t);
-    return boolean_encode(r == 0);
-}
-
-//  s25: prim_string_append
-
-value
-s25(value s, value t)
-{
-    uint32_t s_length = string_length(s);
-    uint32_t t_length = string_length(t);
-    uint32_t u_length = s_length + t_length;
-    value u = string_make(u_length, NULL);
-    char *u_bytes = string_bytes(u);
-    memmove(u_bytes, string_bytes(s), s_length);
-    memmove(u_bytes + s_length, string_bytes(t), t_length);
-    return u;
-}
-
-//  s44: prim_string_clip
-
-value
-s44(value s, value begin, value end)
-{
-    uint32_t s_length = string_length(s);
-    int32_t b = integer_decode(begin);
-    int32_t e = integer_decode(end);
-    if (b < 0 || e < 0 || b > e || e > s_length)
-        die("String clip parameters are invalid.");
-    uint32_t t_length = e - b;
-    value t = string_make(t_length, NULL);
-    const char *s_bytes = string_bytes(s);
-    char *t_bytes = string_bytes(t);
-    memmove(t_bytes, s_bytes + b, t_length);
-    return t;
 }
 
 //  s95: prim_memory_map
@@ -1876,6 +1774,31 @@ s38(value num_bytes_value)
     return value_make_box(TAG_HEAP_CHUNK, id);
 }
 
+//  s32: prim_chunk_new_ro
+
+value
+s32(value num_bytes_value, value init_command_value)
+{
+    int32_t num_bytes = integer_decode(num_bytes_value);
+    if (num_bytes > CHUNK_NUM_BYTES_MAX)
+        die("Chunk size is too big.");
+    size_t align = _Alignof(struct chunk);
+    size_t size = sizeof(struct chunk) + num_bytes;
+    uint32_t id = heap_alloc(align, size);
+    struct chunk *chunk_rep = heap_access(id);
+    chunk_rep->header = chunk_header(CHUNK_RW, num_bytes);
+    memset(chunk_rep->bytes, 0, num_bytes);
+    value chunk_value = value_make_box(TAG_HEAP_CHUNK, id);
+    {
+        uint32_t top = heap.top;
+        value (*init_command)(value, value) = s35(init_command_value, 1);
+        (void)init_command(init_command_value, chunk_value);
+        heap.top = top;
+    }
+    chunk_rep->header = chunk_header(CHUNK_RO, num_bytes);
+    return chunk_value;
+}
+
 //  s14: prim_chunk_size
 
 value
@@ -1956,8 +1879,8 @@ value
 s13(value chunk, value i_value)
 {
     const void *bytes = chunk_access(chunk, CHUNK_RO, i_value, 1);
-    uint16_t u = fetch_uint8(bytes);
-    static_assert(UINT16_MAX <= INTEGER_MAX);
+    uint8_t u = fetch_uint8(bytes);
+    static_assert(UINT8_MAX <= INTEGER_MAX);
     return integer_encode(u);
 }
 

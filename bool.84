@@ -1,0 +1,7 @@
+{
+:Prefix !
+}
+
+Where
+
+Define !a If a False True

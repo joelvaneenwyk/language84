@@ -1,15 +1,22 @@
+
+
     Language 84
+
 
 Introduction
 
     Language 84 is a programming language with a self-hosting compiler.
 
-Notes
 
-    Use GNU Make on Linux to build the executables.
+Build instructions
+
+    Use GNU Make on Linux.
 
         $ make
+
 
 See also
 
     http://norstrulde.org/language84
+
+

@@ -1,7 +1,7 @@
 {
-: list_insertion_on_heap
-: list_insertion_on_stack
-: list_insertion list_insertion_on_heap
+:list_insertion_on_heap
+:list_insertion_on_stack
+:list_insertion list_insertion_on_heap
 }
 
 Where
@@ -12,10 +12,9 @@ Define (list_insertion_on_heap compare input)
             Match right {
             | 'nil (LIST.reverse [a & left])
             | 'cons.{b right_tail}
-                Match (compare a b) {
-                | 'less (LIST.reverse_append left [a & right])
-                | _ (Continue [b & left] right_tail)
-                }
+                If Pattern 'less Matches (compare a b)
+                    (LIST.reverse_append left [a & right])
+                    (Continue [b & left] right_tail)
             }
     In
     (LIST.reduce input 'nil insert)
@@ -26,13 +25,16 @@ Define (list_insertion_on_stack compare input)
             Match sorted {
             | 'nil [a & 'nil]
             | 'cons.{b sorted_tail}
-                Match (compare a b) {
-                | 'less [a & sorted]
-                | _ [b & (Fold sorted_tail)]
-                }
+                If Pattern 'less Matches (compare a b)
+                    [a & sorted]
+                    [b & (Fold sorted_tail)]
             }
     In
     (LIST.reduce input 'nil insert)
+
+Where
+
+Open LIST {:Infix &}
 
 Where
 

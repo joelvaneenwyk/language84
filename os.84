@@ -1,42 +1,43 @@
 {
-: file_create
-: file_open
-: file_close
-: file_read_all
-: die
-: argc
-: argv
-: O_RDONLY 0
-: O_WRONLY 1
-: O_RDWR 2
-: O_CREAT 64
-: O_TRUNC 512
-: O_CLOEXEC [512 * 1024]
-: PROT_READ 1
-: PROT_WRITE 2
-: PROT_EXEC 4
-: MAP_SHARED 1
-: MAP_PRIVATE 2
-: EPOLL_CTL_ADD 1
-: EPOLL_CTL_DEL 2
-: EPOLL_CTL_MOD 3
-: EPOLL_CLOEXEC [512 * 1024]
-: EPOLLIN 1
-: EPOLLOUT 4
-: EPOLLERR 8
-: EPOLLHUP 16
-: exec
-: exit
-: getcwd
-: open
-: close
-: read
-: write
-: mmap
-: munmap
-: epoll_create1
-: epoll_wait
-: epoll_ctl
+:file_create
+:file_open
+:file_close
+:file_read_all
+:die
+:argc
+:argv
+:O_RDONLY 0
+:O_WRONLY 1
+:O_RDWR 2
+:O_CREAT 64
+:O_TRUNC 512
+:O_CLOEXEC [512 * 1024]
+:PROT_READ 1
+:PROT_WRITE 2
+:PROT_EXEC 4
+:MAP_SHARED 1
+:MAP_PRIVATE 2
+:EPOLL_CTL_ADD 1
+:EPOLL_CTL_DEL 2
+:EPOLL_CTL_MOD 3
+:EPOLL_CLOEXEC [512 * 1024]
+:EPOLLIN 1
+:EPOLLOUT 4
+:EPOLLERR 8
+:EPOLLHUP 16
+:exec
+:exit
+:getcwd
+:getpid
+:open
+:close
+:read
+:write
+:mmap
+:munmap
+:epoll_create1
+:epoll_wait
+:epoll_ctl
 }
 
 Where
@@ -63,8 +64,8 @@ Define (argv i)
 
 Define (exec path args vars)
     Let path_offset 0
-    Let arg_offsets (CHUNK.new [4 * (LIST.length args)])
-    Let var_offsets (CHUNK.new [4 * (LIST.length vars)])
+    Let arg_offsets (CHUNK.new_rw [4 * (LIST.length args)])
+    Let var_offsets (CHUNK.new_rw [4 * (LIST.length vars)])
     Let table
         Let path_size [(STRING.length path) + 1]
         Let args_size
@@ -74,7 +75,7 @@ Define (exec path args vars)
             (LIST.reduce vars 0
                 Func {sum var} [sum + (STRING.length var) + 1])
         In
-        (CHUNK.new [path_size + args_size + vars_size])
+        (CHUNK.new_rw [path_size + args_size + vars_size])
     In
     Define (store_strings strings offsets prefix_size)
         Let {_ prefix_size}
@@ -103,6 +104,9 @@ Define (exit status)
 
 Define (getcwd)
     (Prim getcwd)
+
+Define (getpid)
+    (Prim getpid)
 
 Define (open name flags mode)
     (Prim open name flags mode)
@@ -133,6 +137,15 @@ Define (epoll_ctl epoll_fd op fd event)
 
 Where
 
+Open Z
+    {
+    :Infix +
+    :Infix *
+    }
+
+Where
+
 Let CHUNK Package "chunk"
 Let LIST Package "list"
 Let STRING Package "string"
+Let Z Package "z"

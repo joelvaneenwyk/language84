@@ -1,7 +1,7 @@
 {
-: sort
-: gather_imports
-: QUEUE
+:sort
+:gather_imports
+:QUEUE
 }
 
 Where
@@ -29,9 +29,9 @@ Let QUEUE
         }
     In
     {
-    : new
-    : push_all
-    : pop
+    :new
+    :push_all
+    :pop
     }
 
 Define (sort packages)
@@ -97,12 +97,14 @@ Define (gather_imports expr)
                     | 'block.{binders expr}
                         (Fold
                             (LIST.cons expr
-                                (LIST.map binders
-                                    Func binder
+                                (LIST.reduce binders 'nil
+                                    Func {exprs binder}
                                         Match binder {
-                                        | 'let.{_ expr} expr
+                                        | 'let.{_ expr} [expr & exprs]
+                                        | 'open.{expr _} [expr & exprs]
                                         })))
                     | 'app.{func args} (Fold [func & args])
+                    | 'app_infix.{_ left rights} (Fold [left & rights])
                     | 'func.{_ expr} (Fold [expr & 'nil])
                     | 'iterate.{_ inits expr} (Fold [expr & inits])
                     | 'continue.exprs (Fold exprs)
@@ -119,6 +121,7 @@ Define (gather_imports expr)
                         (Fold [test & then & 'nil])
                     | 'or.{test else}
                         (Fold [test & else & 'nil])
+                    | 'pattern_matches.{_ expr} (Fold [expr & 'nil])
                     | 'labeled.{_ expr} (Fold [expr & 'nil])
                     | 'match.{expr clauses}
                         (Fold [expr & (LIST.map clauses [Func {_ body} body])])
@@ -131,6 +134,12 @@ Define (gather_imports expr)
 
 Where
 
+Open LIST {:Infix &}
+Open FUNC {:Infix >>}
+
+Where
+
+Let FUNC Package "func"
 Let GRAPH Package "graph"
 Let LIST Package "list"
 Let OS Package "os"
