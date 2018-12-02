@@ -1,2 +1,6 @@
 84_stable
 *.o
+84
+*.c.*
+local.make
+hello

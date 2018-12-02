@@ -1,0 +1,5 @@
+(STDIO.print_line "Hello!")
+
+Where
+
+Let STDIO Package "stdio"
