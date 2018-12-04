@@ -2,7 +2,7 @@
 //
 //   02  07
 //   16
-// 
+//
 //   32  34
 //   48  49
 //   51  57
@@ -123,11 +123,15 @@ static long
 syscall1(long n, long a1)
 {
     unsigned long ret;
+#ifdef __MINGW32__
+    ret = 0;
+#else
     __asm__ __volatile__ (
             "syscall"
             : "=a"(ret)
             : "a"(n), "D"(a1)
             : "rcx", "r11", "memory");
+#endif
     return ret;
 }
 
@@ -135,11 +139,15 @@ static long
 syscall2(long n, long a1, long a2)
 {
     unsigned long ret;
+#ifdef __MINGW32__
+    ret = 0;
+#else
     __asm__ __volatile__ (
             "syscall"
             : "=a"(ret)
             : "a"(n), "D"(a1), "S"(a2)
             : "rcx", "r11", "memory");
+#endif
     return ret;
 }
 
@@ -147,11 +155,15 @@ static long
 syscall3(long n, long a1, long a2, long a3)
 {
     unsigned long ret;
+#ifdef __MINGW32__
+    ret = 0;
+#else
     __asm__ __volatile__ (
             "syscall"
             : "=a"(ret)
             : "a"(n), "D"(a1), "S"(a2), "d"(a3)
             : "rcx", "r11", "memory");
+#endif
     return ret;
 }
 
@@ -159,12 +171,16 @@ static long
 syscall4(long n, long a1, long a2, long a3, long a4)
 {
     unsigned long ret;
+#ifdef __MINGW32__
+    ret = 0;
+#else
     register long r10 __asm__("r10") = a4;
     __asm__ __volatile__ (
             "syscall"
             : "=a"(ret)
             : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10)
             : "rcx", "r11", "memory");
+#endif
     return ret;
 }
 
@@ -172,6 +188,9 @@ static long
 syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
 {
     unsigned long ret;
+#ifdef __MINGW32__
+    ret = 0;
+#else
     register long r10 __asm__("r10") = a4;
     register long r8 __asm__("r8") = a5;
     register long r9 __asm__("r9") = a6;
@@ -180,6 +199,7 @@ syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
             : "=a"(ret)
             : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8), "r"(r9)
             : "rcx", "r11", "memory");
+#endif
     return ret;
 }
 
@@ -339,6 +359,7 @@ memset(void *dest, int c, size_t n)
     return dest;
 }
 
+#ifndef __MINGW32__
 __asm__(
     ".text\n"
     ".global _start\n"
@@ -348,6 +369,7 @@ __asm__(
     "   lea 8(%rsp), %rsi\n"
     "   call start_c\n"
 );
+#endif
 
 void
 start_c(int argc, const char *argv[])

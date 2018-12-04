@@ -7,6 +7,7 @@ OPTIM = 0
 
 Q = @
 E = @ echo
+CC = gcc
 CFLAGS = -I. -std=gnu11 -static -fno-stack-protector -Wno-unused-variable -Wno-unused-function -Wno-unused-value -O$(OPTIM)
 LDFLAGS = -nostdlib -Wl,--build-id=none
 
@@ -32,7 +33,7 @@ $(programs) 84_stable: support.o
 	$(E) "CC  $@"
 	$(Q) $(CC) $(CFLAGS) $(LDFLAGS) \
 		-o $@ $@.c support.o \
-		
+
 
 84_stable: 84_stable.c
 
